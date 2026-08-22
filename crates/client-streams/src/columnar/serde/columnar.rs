@@ -5,9 +5,9 @@ use std::marker::PhantomData;
 
 use bytes::Bytes;
 use columnar::{
+    Borrow, Columnar, ContainerOf,
     bytes::stash::Stash,
     common::{Index, Len, Push},
-    Borrow, Columnar, ContainerOf,
 };
 
 use crate::processor::serde::{Serde, SerdeAssociate, SerdeError};

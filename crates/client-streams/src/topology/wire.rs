@@ -434,12 +434,16 @@ mod tests {
             json["subtopologies"][0]["state_changelog_topics"][0]["topic_configs"][0]["key"]
                 == "cleanup.policy"
         );
-        check!(json["subtopologies"][0]
-            .get("unknown_tagged_fields")
-            .is_none());
-        check!(json["subtopologies"][0]["state_changelog_topics"][0]
-            .get("unknown_tagged_fields")
-            .is_none());
+        check!(
+            json["subtopologies"][0]
+                .get("unknown_tagged_fields")
+                .is_none()
+        );
+        check!(
+            json["subtopologies"][0]["state_changelog_topics"][0]
+                .get("unknown_tagged_fields")
+                .is_none()
+        );
     }
 
     #[test]

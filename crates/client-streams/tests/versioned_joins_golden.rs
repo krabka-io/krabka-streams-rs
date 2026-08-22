@@ -18,7 +18,7 @@ mod support;
 
 use assert2::check;
 use crabka_client_streams::{
-    dsl::StreamsBuilder, Consumed, I64Serde, Materialized, Produced, StringSerde,
+    Consumed, I64Serde, Materialized, Produced, StringSerde, dsl::StreamsBuilder,
 };
 use crabka_units::prelude::*;
 use serde::Deserialize;

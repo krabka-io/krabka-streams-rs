@@ -10,9 +10,9 @@
 
 use assert2::check;
 use crabka_schema_serde::{
-    cache::{CacheConfig, SchemaCache},
-    format::{json::JsonSerde, SchemaSerializer},
     RegistryClient,
+    cache::{CacheConfig, SchemaCache},
+    format::{SchemaSerializer, json::JsonSerde},
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

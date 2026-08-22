@@ -2251,8 +2251,8 @@ mod to_table_caching_tests {
     use crabka_units::prelude::*;
 
     use crate::{
-        dsl::StreamsBuilder, store::backend::StoreBackend, I64Serde, Materialized, Produced,
-        StringSerde,
+        I64Serde, Materialized, Produced, StringSerde, dsl::StreamsBuilder,
+        store::backend::StoreBackend,
     };
 
     /// Caching ON: the `to_table` store is marked cached (`cache_owner` rooted).

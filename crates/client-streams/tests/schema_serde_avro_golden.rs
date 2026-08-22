@@ -8,9 +8,9 @@
 use apache_avro::AvroSchema;
 use assert2::check;
 use crabka_schema_serde::{
-    cache::{CacheConfig, SchemaCache},
-    format::{avro::AvroSerde, SchemaSerializer},
     RegistryClient,
+    cache::{CacheConfig, SchemaCache},
+    format::{SchemaSerializer, avro::AvroSerde},
 };
 use serde::{Deserialize, Serialize};
 

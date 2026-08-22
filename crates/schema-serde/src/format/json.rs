@@ -7,7 +7,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use bytes::Bytes;
 use schemars::JsonSchema;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     cache::SchemaCache,

@@ -714,10 +714,11 @@ mod tests {
         check!(wire.subtopologies[0].subtopology_id == "1");
         check!(wire.subtopologies[0].source_topics == vec!["in".to_string()]);
         // No changelog topic for the global store.
-        check!(wire
-            .subtopologies
-            .iter()
-            .all(|s| s.state_changelog_topics.is_empty()));
+        check!(
+            wire.subtopologies
+                .iter()
+                .all(|s| s.state_changelog_topics.is_empty())
+        );
     }
 
     #[test]

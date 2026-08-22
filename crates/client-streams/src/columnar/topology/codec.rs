@@ -2,7 +2,7 @@
 //! polars `DataFrame`.
 
 use bytes::Bytes;
-use crabka_units::{convert::ByteSizeExt as _, kibibytes, ByteSize};
+use crabka_units::{ByteSize, convert::ByteSizeExt as _, kibibytes};
 use polars::prelude::*;
 
 use crate::{columnar::serde::polars::PolarsIpcSerde, processor::serde::Serde};

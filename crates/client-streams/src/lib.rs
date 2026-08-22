@@ -1009,7 +1009,9 @@ pub use topology::{BuiltTopology, NodeHandle, Topology, TopologyError};
 /// root instead needs the crate prefix.
 #[cfg(test)]
 pub(crate) fn testdata(relative: &str) -> std::path::PathBuf {
-    let base = std::env::var("CARGO_MANIFEST_DIR")
-        .unwrap_or_else(|_| "crates/client-streams".to_owned());
-    std::path::Path::new(&base).join("tests/testdata").join(relative)
+    let base =
+        std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| "crates/client-streams".to_owned());
+    std::path::Path::new(&base)
+        .join("tests/testdata")
+        .join(relative)
 }

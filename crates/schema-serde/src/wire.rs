@@ -192,9 +192,11 @@ mod tests {
         put_varint(&mut frame, -1);
 
         let error = decode_protobuf(&frame).unwrap_err();
-        check!(error
-            .to_string()
-            .contains("negative Protobuf message-index count"));
+        check!(
+            error
+                .to_string()
+                .contains("negative Protobuf message-index count")
+        );
     }
 
     #[test]

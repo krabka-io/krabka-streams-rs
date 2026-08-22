@@ -16,7 +16,7 @@ use crate::{
         config::Materialized,
         emit::EmitStrategy,
         graph::{GraphNodeKind, LowerState, NodeId},
-        kgrouped::{mint_store_name, KGroupedStream, RepartitionLowerFn},
+        kgrouped::{KGroupedStream, RepartitionLowerFn, mint_store_name},
         ktable::{KTable, SuppressStoreFactory},
         names,
         processors::session_aggregate::{
@@ -462,9 +462,9 @@ mod tests {
 
     use crate::{
         dsl::{
+            StreamsBuilder,
             emit::EmitStrategy,
             windows::{SessionWindowedSerde, SessionWindows, Window, Windowed},
-            StreamsBuilder,
         },
         processor::serde::{Consumed, I64Serde, Produced, StringSerde},
         test_driver::TopologyTestDriver,

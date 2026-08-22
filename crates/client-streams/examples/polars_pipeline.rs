@@ -5,15 +5,15 @@
 //! Run: `cargo run -p crabka-client-streams --features polars --example polars_pipeline`
 
 use crabka_client_streams::{
+    Serde,
     columnar::{
         serde::polars::PolarsIpcSerde,
         topology::{
+            ColumnarTestDriver, ColumnarTopology,
             codec::{BlobCodec, ConsumedRecord},
             operator::BuiltinOp,
-            ColumnarTestDriver, ColumnarTopology,
         },
     },
-    Serde,
 };
 use polars::prelude::*;
 

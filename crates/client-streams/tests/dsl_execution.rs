@@ -3488,8 +3488,10 @@ fn versioned_table_changelog_matches_jvm() {
         })
     }
     let golden: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(support::testdata("golden/dsl/behavioral/versioned_changelog.json"))
-            .expect("changelog golden present"),
+        &std::fs::read_to_string(support::testdata(
+            "golden/dsl/behavioral/versioned_changelog.json",
+        ))
+        .expect("changelog golden present"),
     )
     .unwrap();
     let expected: Vec<(String, Option<String>, i64)> = golden
@@ -3542,8 +3544,10 @@ fn versioned_table_changelog_matches_jvm() {
 #[test]
 fn versioned_table_behavioral_matches_jvm() {
     let golden: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(support::testdata("golden/dsl/behavioral/versioned_table.json"))
-            .expect("behavioral golden present"),
+        &std::fs::read_to_string(support::testdata(
+            "golden/dsl/behavioral/versioned_table.json",
+        ))
+        .expect("behavioral golden present"),
     )
     .unwrap();
     let expected: Vec<(Option<String>, i64)> = golden

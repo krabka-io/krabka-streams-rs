@@ -3,8 +3,8 @@
 mod support;
 
 use crabka_client_streams::{
-    dsl::StreamsBuilder, Consumed, I64Serde, Materialized, Produced, StringSerde,
-    TimeWindowedSerde, TimeWindows,
+    Consumed, I64Serde, Materialized, Produced, StringSerde, TimeWindowedSerde, TimeWindows,
+    dsl::StreamsBuilder,
 };
 use crabka_units::prelude::*;
 

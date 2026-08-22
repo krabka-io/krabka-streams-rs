@@ -8,9 +8,9 @@
 
 use assert2::check;
 use crabka_schema_serde::{
-    cache::{CacheConfig, SchemaCache},
-    format::{protobuf::ProtobufSerde, SchemaSerializer},
     RegistryClient,
+    cache::{CacheConfig, SchemaCache},
+    format::{SchemaSerializer, protobuf::ProtobufSerde},
 };
 
 /// Embedded descriptor set that the generated `Order` references. See

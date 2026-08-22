@@ -241,9 +241,11 @@ mod tests {
         check!(eager.record_cap() == Some(5));
         check!(eager.is_emit_early());
         check!(!eager.shut_down_when_full().is_emit_early());
-        check!(BufferConfig::unbounded()
-            .emit_early_when_full()
-            .is_emit_early());
+        check!(
+            BufferConfig::unbounded()
+                .emit_early_when_full()
+                .is_emit_early()
+        );
     }
 
     #[test]

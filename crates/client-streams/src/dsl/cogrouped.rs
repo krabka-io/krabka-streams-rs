@@ -22,7 +22,7 @@ use crate::{
         builder::InternalStreamsBuilder,
         config::Materialized,
         graph::{GraphNodeKind, LowerState, NodeId},
-        kgrouped::{mint_store_name, KGroupedStream, RepartitionLowerFn},
+        kgrouped::{KGroupedStream, RepartitionLowerFn, mint_store_name},
         ktable::KTable,
         names,
         processors::{
@@ -561,8 +561,8 @@ mod cogroup_caching_tests {
     use crabka_units::prelude::*;
 
     use crate::{
-        dsl::StreamsBuilder, store::backend::StoreBackend, I64Serde, Materialized, Produced,
-        StringSerde,
+        I64Serde, Materialized, Produced, StringSerde, dsl::StreamsBuilder,
+        store::backend::StoreBackend,
     };
 
     /// Two co-grouped inputs aggregate into one cached KV store.

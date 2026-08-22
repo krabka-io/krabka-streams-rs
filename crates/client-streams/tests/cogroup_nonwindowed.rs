@@ -3,7 +3,7 @@
 mod support;
 
 use crabka_client_streams::{
-    dsl::StreamsBuilder, Consumed, I64Serde, Materialized, Produced, StringSerde,
+    Consumed, I64Serde, Materialized, Produced, StringSerde, dsl::StreamsBuilder,
 };
 
 fn assert_matches_fixture(wire: &crabka_client_streams::topology::WireTopology, fixture: &str) {
