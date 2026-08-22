@@ -3,12 +3,12 @@
 
 use std::marker::PhantomData;
 
-use ::columnar::{
-    Borrow, Columnar, ContainerOf,
+use bytes::Bytes;
+use columnar::{
     bytes::stash::Stash,
     common::{Index, Len, Push},
+    Borrow, Columnar, ContainerOf,
 };
-use bytes::Bytes;
 
 use crate::processor::serde::{Serde, SerdeAssociate, SerdeError};
 
@@ -83,8 +83,8 @@ impl<T: Send + Sync + 'static> SerdeAssociate for ColumnarSerde<T> {
 
 #[cfg(test)]
 mod tests {
-    use ::columnar::Columnar;
     use assert2::check;
+    use columnar::Columnar;
 
     use super::*;
 

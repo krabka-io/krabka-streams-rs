@@ -3,8 +3,8 @@
 //! The default impl goes through `serde_json`, so it works for any row type that
 //! is `Serialize + DeserializeOwned`.
 
-use ::polars::prelude::*;
-use serde::{Serialize, de::DeserializeOwned};
+use polars::prelude::*;
+use serde::{de::DeserializeOwned, Serialize};
 
 use super::codec::BatchError;
 

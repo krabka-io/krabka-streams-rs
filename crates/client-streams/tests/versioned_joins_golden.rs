@@ -14,9 +14,11 @@
 //! the table yields 10, so the join emits 11. An as-of(250) read yields 20, so
 //! the join emits 21. A wrong as-of timestamp gives a wrong value.
 
+mod support;
+
 use assert2::check;
 use crabka_client_streams::{
-    Consumed, I64Serde, Materialized, Produced, StringSerde, dsl::StreamsBuilder,
+    dsl::StreamsBuilder, Consumed, I64Serde, Materialized, Produced, StringSerde,
 };
 use crabka_units::prelude::*;
 use serde::Deserialize;
@@ -43,9 +45,10 @@ struct TableTableGolden {
 }
 
 fn load_table_table_golden() -> TableTableGolden {
-    let path = "tests/testdata/versioned_joins/tabletable.json";
-    let raw = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read golden {path}: {e}"));
-    serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse golden {path}: {e}"))
+    let path = support::testdata("versioned_joins/tabletable.json");
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()));
+    serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse golden {}: {e}", path.display()))
 }
 
 /// One output record in a golden `out` array.
@@ -71,9 +74,10 @@ struct Golden {
 
 /// Loads and parses a golden JSON file from the versioned-joins testdata directory.
 fn load_golden(name: &str) -> Golden {
-    let path = format!("tests/testdata/versioned_joins/{name}");
-    let raw = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read golden {path}: {e}"));
-    serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse golden {path}: {e}"))
+    let path = support::testdata(&format!("versioned_joins/{name}"));
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()));
+    serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse golden {}: {e}", path.display()))
 }
 
 /// As-of stream-table inner join (KIP-914).
@@ -323,9 +327,10 @@ struct GraceGolden {
 }
 
 fn load_grace_golden() -> GraceGolden {
-    let path = "tests/testdata/versioned_joins/grace.json";
-    let raw = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read golden {path}: {e}"));
-    serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse golden {path}: {e}"))
+    let path = support::testdata("versioned_joins/grace.json");
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()));
+    serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse golden {}: {e}", path.display()))
 }
 
 /// Builds the grace stream-table join topology the JVM capture program builds.

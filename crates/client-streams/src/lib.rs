@@ -999,3 +999,17 @@ pub use store::{
 pub use streams_app::StreamsApp;
 pub use test_driver::TopologyTestDriver;
 pub use topology::{BuiltTopology, NodeHandle, Topology, TopologyError};
+
+/// A path under `tests/testdata`, for the unit tests that compare against a
+/// captured JVM fixture.
+///
+/// Resolved while the test runs rather than through `env!`, which would bake
+/// the absolute build directory into the compiled test binary. Cargo sets the
+/// variable and runs from the crate; a build system that runs from a workspace
+/// root instead needs the crate prefix.
+#[cfg(test)]
+pub(crate) fn testdata(relative: &str) -> std::path::PathBuf {
+    let base = std::env::var("CARGO_MANIFEST_DIR")
+        .unwrap_or_else(|_| "crates/client-streams".to_owned());
+    std::path::Path::new(&base).join("tests/testdata").join(relative)
+}

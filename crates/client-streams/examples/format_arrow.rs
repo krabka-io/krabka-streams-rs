@@ -2,7 +2,7 @@
 //! Run: `cargo run -p crabka-client-streams --example format_arrow --features arrow`
 use std::sync::Arc;
 
-use ::arrow::{
+use arrow::{
     array::{Int64Array, RecordBatch, StringArray},
     datatypes::{DataType, Field, Schema},
 };

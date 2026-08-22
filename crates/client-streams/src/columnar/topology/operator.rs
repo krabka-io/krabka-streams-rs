@@ -7,7 +7,7 @@
 //! aggregation drops them or recomputes them. The items below document each
 //! case.
 
-use ::polars::prelude::*;
+use polars::prelude::*;
 
 use super::codec::{BatchError, RESERVED_COLUMNS};
 

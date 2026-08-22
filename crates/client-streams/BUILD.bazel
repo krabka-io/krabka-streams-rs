@@ -1,0 +1,19 @@
+load("//bazel:defs.bzl", "crate_library", "crate_tests")
+
+package(default_visibility = ["//visibility:public"])
+
+# Consumed by `crate.from_cargo` (see //MODULE.bazel).
+exports_files(["Cargo.toml"])
+
+crate_library(name = "client-streams")
+
+crate_tests(
+    # Captured schema-registry payloads and topology fixtures, reached both
+    # while a test compiles and while it runs.
+    compile_data = glob([
+        "examples/gen/**",
+        "tests/testdata/**",
+    ]),
+    data = glob(["tests/testdata/**"]),
+    lib = "client-streams",
+)

@@ -19,7 +19,7 @@
 //! Env: `STREAMS_N` (records, default 2M), `STREAMS_KEYS` (default 1000),
 //! `STREAMS_VALUE_BYTES` (default 100).
 
-use crabka_client_streams::{Consumed, StringSerde, TopologyTestDriver, dsl::StreamsBuilder};
+use crabka_client_streams::{dsl::StreamsBuilder, Consumed, StringSerde, TopologyTestDriver};
 
 fn env<T: std::str::FromStr>(k: &str, d: T) -> T {
     std::env::var(k)

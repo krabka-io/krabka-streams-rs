@@ -2,11 +2,11 @@
 //! wire bytes.
 //!
 //! Run it with `cargo run -p crabka-client-streams --example format_json`.
-use crabka_client_streams::{SchemaSerde, processor::serde::Serde};
+use crabka_client_streams::{processor::serde::Serde, SchemaSerde};
 use crabka_schema_serde::{
-    RegistryClient,
     cache::{CacheConfig, SchemaCache},
     format::json::JsonSerde,
+    RegistryClient,
 };
 use serde::{Deserialize, Serialize};
 

@@ -12,7 +12,7 @@ use arrow::{
     ipc::{reader::StreamReader, writer::StreamWriter},
 };
 use bytes::Bytes;
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use thiserror::Error;
 
 use crate::processor::serde::{DefaultSerde, Serde, SerdeAssociate, SerdeError};

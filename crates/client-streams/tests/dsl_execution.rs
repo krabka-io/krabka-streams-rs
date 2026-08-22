@@ -8,6 +8,8 @@
 //! topic names is Task 8. This test's gate is *execution correctness*, so it
 //! uses `group_by_key` with no preceding key change. That gives one subtopology
 //! and no repartition, which keeps the test robust.
+mod support;
+
 use crabka_client_streams::{
     Consumed, Grouped, I64Serde, Materialized, Produced, StringSerde, dsl::StreamsBuilder,
 };
@@ -2960,7 +2962,7 @@ fn sliding_window_count_matches_jvm_behavior() {
         });
     }
     let golden: Vec<Row> = serde_json::from_str(
-        &std::fs::read_to_string("tests/testdata/sliding_window/behavior.json").unwrap(),
+        &std::fs::read_to_string(support::testdata("sliding_window/behavior.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(
@@ -3027,7 +3029,7 @@ fn emit_final_time_window_matches_jvm_behavior() {
         });
     }
     let golden: Vec<EmitFinalRow> = serde_json::from_str(
-        &std::fs::read_to_string("tests/testdata/emit_final/time.json").unwrap(),
+        &std::fs::read_to_string(support::testdata("emit_final/time.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(got, golden, "emit-final time-window sequence != JVM golden");
@@ -3076,7 +3078,7 @@ fn emit_final_sliding_window_matches_jvm_behavior() {
         });
     }
     let golden: Vec<EmitFinalRow> = serde_json::from_str(
-        &std::fs::read_to_string("tests/testdata/emit_final/sliding.json").unwrap(),
+        &std::fs::read_to_string(support::testdata("emit_final/sliding.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(
@@ -3132,7 +3134,7 @@ fn emit_final_session_window_matches_jvm_behavior() {
         });
     }
     let golden: Vec<EmitFinalRow> = serde_json::from_str(
-        &std::fs::read_to_string("tests/testdata/emit_final/session.json").unwrap(),
+        &std::fs::read_to_string(support::testdata("emit_final/session.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(
@@ -3218,7 +3220,7 @@ fn sliding_window_reduce_matches_jvm_behavior() {
         });
     }
     let golden: Vec<Row> = serde_json::from_str(
-        &std::fs::read_to_string("tests/testdata/sliding_window/behavior_reduce.json").unwrap(),
+        &std::fs::read_to_string(support::testdata("sliding_window/behavior_reduce.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(
@@ -3486,7 +3488,7 @@ fn versioned_table_changelog_matches_jvm() {
         })
     }
     let golden: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string("tests/testdata/golden/dsl/behavioral/versioned_changelog.json")
+        &std::fs::read_to_string(support::testdata("golden/dsl/behavioral/versioned_changelog.json"))
             .expect("changelog golden present"),
     )
     .unwrap();
@@ -3540,7 +3542,7 @@ fn versioned_table_changelog_matches_jvm() {
 #[test]
 fn versioned_table_behavioral_matches_jvm() {
     let golden: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string("tests/testdata/golden/dsl/behavioral/versioned_table.json")
+        &std::fs::read_to_string(support::testdata("golden/dsl/behavioral/versioned_table.json"))
             .expect("behavioral golden present"),
     )
     .unwrap();

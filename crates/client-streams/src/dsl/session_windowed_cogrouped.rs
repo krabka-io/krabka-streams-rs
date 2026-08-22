@@ -12,8 +12,8 @@ use crate::{
     dsl::{
         builder::InternalStreamsBuilder,
         cogrouped::{
-            CogroupInput, CogroupKind, CogroupSpec, CogroupedKStream, StoreRegistrarFn,
-            lower_cogroup,
+            lower_cogroup, CogroupInput, CogroupKind, CogroupSpec, CogroupedKStream,
+            StoreRegistrarFn,
         },
         config::Materialized,
         kgrouped::mint_store_name,
@@ -143,9 +143,9 @@ mod caching_tests {
     use crabka_units::prelude::*;
 
     use crate::{
-        BufferConfig, I64Serde, Materialized, Produced, SessionWindows, StringSerde, Suppressed,
-        dsl::{StreamsBuilder, windows::SessionWindowedSerde},
+        dsl::{windows::SessionWindowedSerde, StreamsBuilder},
         store::backend::StoreBackend,
+        BufferConfig, I64Serde, Materialized, Produced, SessionWindows, StringSerde, Suppressed,
     };
 
     #[test]

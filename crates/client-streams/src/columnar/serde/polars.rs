@@ -3,8 +3,8 @@
 
 use std::io::Cursor;
 
-use ::polars::prelude::*;
 use bytes::Bytes;
+use polars::prelude::*;
 
 use crate::processor::serde::{DefaultSerde, Serde, SerdeAssociate, SerdeError};
 

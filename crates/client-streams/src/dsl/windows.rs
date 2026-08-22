@@ -374,10 +374,10 @@ mod tests {
         // `windows_for` divides by the hop in whole milliseconds, so anything
         // finer than a millisecond would divide by zero rather than window.
         check!(std::panic::catch_unwind(|| TimeWindows::of_size(micros(100))).is_err());
-        check!(
-            std::panic::catch_unwind(|| TimeWindows::of_size(millis(10)).advance_by(micros(500)))
-                .is_err()
-        );
+        check!(std::panic::catch_unwind(
+            || TimeWindows::of_size(millis(10)).advance_by(micros(500))
+        )
+        .is_err());
         // One millisecond is the finest the timeline can express, and works.
         let finest = TimeWindows::of_size(millis(1));
         check!(finest.windows_for(0) == vec![0]);

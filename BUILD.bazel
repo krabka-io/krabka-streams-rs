@@ -1,0 +1,26 @@
+"""Root package: the public krabka streams surface."""
+
+package(default_visibility = ["//visibility:public"])
+
+# Cargo.lock/Cargo.toml are consumed by `crate.from_cargo` (see //MODULE.bazel);
+# clippy.toml by the lint aspect in //tools/lint; .cargo/mutants.toml by the
+# mutation sweep, via `--@rules_rs_mutants//mutants:config` in //.bazelrc.
+exports_files([
+    ".cargo/mutants.toml",
+    "Cargo.lock",
+    "Cargo.toml",
+    "clippy.toml",
+])
+
+# The Kafka Streams client.
+alias(
+    name = "client-streams",
+    actual = "//crates/client-streams",
+)
+
+# Schema-registry-aware serialisation, which the streams client reads and
+# writes records through.
+alias(
+    name = "schema-serde",
+    actual = "//crates/schema-serde",
+)

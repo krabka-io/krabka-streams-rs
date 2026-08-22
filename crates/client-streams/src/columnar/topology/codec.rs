@@ -1,9 +1,9 @@
 //! `BatchCodec`: the bridge between a per-partition batch of Kafka records and a
 //! polars `DataFrame`.
 
-use ::polars::prelude::*;
 use bytes::Bytes;
-use crabka_units::{ByteSize, convert::ByteSizeExt as _, kibibytes};
+use crabka_units::{convert::ByteSizeExt as _, kibibytes, ByteSize};
+use polars::prelude::*;
 
 use crate::{columnar::serde::polars::PolarsIpcSerde, processor::serde::Serde};
 

@@ -17,7 +17,6 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
-
   schema-registry:
     image: mirror.gcr.io/confluentinc/cp-schema-registry:7.7.1
     hostname: schema-registry
@@ -27,7 +26,6 @@ services:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
-
   capture:
     image: mirror.gcr.io/library/python:3.12-slim
     depends_on: [schema-registry]

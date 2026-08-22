@@ -276,8 +276,8 @@ impl BuiltColumnarTopology<'_> {
 
 #[cfg(test)]
 mod tests {
-    use ::polars::prelude::*;
     use assert2::check;
+    use polars::prelude::*;
 
     use super::*;
     use crate::{

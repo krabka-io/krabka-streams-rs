@@ -2,13 +2,15 @@
 //!
 //! The wire `Topology` the DSL lowers to must byte-match the captured JVM 4.x
 //! fixture for the same logical pipeline.
+mod support;
+
 use crabka_client_streams::{Consumed, Produced, StringSerde, dsl::StreamsBuilder};
 use crabka_units::prelude::*;
 
 fn assert_matches_fixture(wire: &crabka_client_streams::topology::WireTopology, fixture: &str) {
-    let path = format!("tests/testdata/golden/dsl/{fixture}.topology.json");
+    let path = support::testdata(&format!("golden/dsl/{fixture}.topology.json"));
     let expected: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}")),
+        &std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display())),
     )
     .unwrap();
     let actual = serde_json::to_value(wire).unwrap();

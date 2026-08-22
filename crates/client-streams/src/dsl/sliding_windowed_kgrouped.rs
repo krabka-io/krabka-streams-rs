@@ -15,7 +15,7 @@ use crate::{
         config::Materialized,
         emit::EmitStrategy,
         graph::{GraphNodeKind, LowerState, NodeId},
-        kgrouped::{KGroupedStream, RepartitionLowerFn, mint_store_name},
+        kgrouped::{mint_store_name, KGroupedStream, RepartitionLowerFn},
         ktable::{KTable, SuppressStoreFactory},
         names,
         processors::sliding_window_aggregate::{

@@ -428,11 +428,18 @@ mod tests {
     }
 
     fn golden() -> serde_json::Value {
-        let raw = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/testdata/kgrouped_table/changed_bytes.json"
-        ))
-        .expect("read changed_bytes golden");
+        // Resolved while the test runs, not while it compiles. `env!` bakes the
+        // absolute build directory into the binary, so the same sources would
+        // produce different bytes on different machines and a sandboxed build
+        // refuses them. Cargo sets the variable for test binaries; a build that
+        // does not runs from a root where the crate path locates the file.
+        let base = std::env::var("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|_| "crates/client-streams".to_owned());
+        let path =
+            std::path::Path::new(&base).join("tests/testdata/kgrouped_table/changed_bytes.json");
+        let raw = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+            panic!("read changed_bytes golden {}: {error}", path.display())
+        });
         serde_json::from_str(&raw).unwrap()
     }
 

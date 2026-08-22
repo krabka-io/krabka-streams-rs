@@ -6,10 +6,10 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use apache_avro::{
-    AvroSchema, from_avro_datum, from_value, schema::Schema, to_avro_datum, to_value,
+    from_avro_datum, from_value, schema::Schema, to_avro_datum, to_value, AvroSchema,
 };
 use bytes::Bytes;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
     cache::SchemaCache,
