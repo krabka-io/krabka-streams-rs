@@ -19,6 +19,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    barrier::{BarrierAlignment, BarrierCut},
     error::StreamsClientError,
     membership::{
         DEFAULT_STREAMS_JOIN_RETRY_BACKOFF, DEFAULT_STREAMS_LEAVE_HEARTBEAT_TIMEOUT,
@@ -38,6 +39,23 @@ use crate::{
     store::iq::StoreKind,
     topology::BuiltTopology,
 };
+
+/// A request from a [`KafkaStreams`] handle to the supervisor, to rewind every
+/// task to a barrier cut.
+///
+/// The supervisor owns the [`StreamThread`], so a rewind travels the same way an
+/// interactive query does.
+enum BarrierRequest {
+    /// Rewind to the cut of a named epoch.
+    RestoreToEpoch {
+        epoch: i64,
+        reply: tokio::sync::oneshot::Sender<Result<BarrierCut, StreamsClientError>>,
+    },
+    /// Rewind to the complete cut with the highest epoch.
+    RestoreToLatestCut {
+        reply: tokio::sync::oneshot::Sender<Result<BarrierCut, StreamsClientError>>,
+    },
+}
 
 /// Default delay between Client Streams processing polls.
 pub const DEFAULT_STREAMS_POLL_INTERVAL: Duration = Duration::from_millis(200);
@@ -276,6 +294,8 @@ pub struct KafkaStreams {
     /// Channel to the supervisor for `IQv2` queries. It is separate from the v1
     /// `iq_tx`.
     iq2_tx: mpsc::Sender<Iq2Request>,
+    /// Channel to the supervisor for barrier rewinds.
+    barrier_tx: mpsc::Sender<BarrierRequest>,
 }
 
 #[bon::bon]
@@ -324,6 +344,9 @@ impl KafkaStreams {
         /// Capacity shared by the v1 and v2 interactive-query request queues.
         #[builder(default)]
         interactive_query_queue_capacity: StreamsInteractiveQueryQueueCapacity,
+        /// The barrier group to align on, and where each cut's snapshot lives.
+        /// Without one the runtime holds no record back and takes no snapshot.
+        barrier: Option<BarrierAlignment>,
     ) -> Result<Self, StreamsClientError> {
         let (
             poll_interval,
@@ -421,6 +444,8 @@ impl KafkaStreams {
             interactive_query_queue_capacities(interactive_query_queue_capacity);
         let (iq_tx, mut iq_rx) = mpsc::channel::<IqRequest>(iq_capacity);
         let (iq2_tx, mut iq2_rx) = mpsc::channel::<Iq2Request>(iq2_capacity);
+        // One in flight is enough: a rewind is an operator action, not a query.
+        let (barrier_tx, mut barrier_rx) = mpsc::channel::<BarrierRequest>(1);
         let is_eos = processing_guarantee == ProcessingGuarantee::ExactlyOnceV2;
         let handle = tokio::spawn(async move {
             let mut thread = StreamThread::new(
@@ -429,6 +454,9 @@ impl KafkaStreams {
                 application_id,
                 cache_max_bytes,
             );
+            if let Some(alignment) = barrier {
+                thread = thread.with_barrier(alignment);
+            }
             let mut poll = tokio::time::interval(poll_interval.duration());
             let mut commit = tokio::time::interval(commit_interval.duration());
             let tracker = membership.tracker();
@@ -483,6 +511,16 @@ impl KafkaStreams {
                     Some(req) = iq2_rx.recv() => {
                         thread.serve_iq2(req).await;
                     }
+                    Some(req) = barrier_rx.recv() => {
+                        match req {
+                            BarrierRequest::RestoreToEpoch { epoch, reply } => {
+                                let _ = reply.send(thread.restore_to_epoch(epoch).await);
+                            }
+                            BarrierRequest::RestoreToLatestCut { reply } => {
+                                let _ = reply.send(thread.restore_to_latest_cut().await);
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -493,6 +531,7 @@ impl KafkaStreams {
             handle,
             iq_tx,
             iq2_tx,
+            barrier_tx,
         })
     }
 }
@@ -589,6 +628,51 @@ impl KafkaStreams {
             Ok(outcome) => assemble::<Q::Result>(outcome),
             Err(_) => StateQueryResult::new(std::collections::BTreeMap::new()),
         }
+    }
+
+    /// Rewinds every active task to the cut of `epoch`.
+    ///
+    /// Each task's stores become the snapshot taken at that cut, and every
+    /// source partition the cut names seeks to its marker offset. Processing
+    /// then replays from the cut.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the app names no barrier group, when the group has
+    /// no complete cut at `epoch`, when a task has no snapshot at that epoch, or
+    /// when the supervisor has stopped.
+    pub async fn restore_to_epoch(&self, epoch: i64) -> Result<BarrierCut, StreamsClientError> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        self.send_barrier(BarrierRequest::RestoreToEpoch { epoch, reply }, rx)
+            .await
+    }
+
+    /// Rewinds every active task to the complete cut with the highest epoch, as
+    /// [`restore_to_epoch`](Self::restore_to_epoch) does for a named epoch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the app names no barrier group, when the group has
+    /// no complete cut, when a task has no snapshot at that cut, or when the
+    /// supervisor has stopped.
+    pub async fn restore_to_latest_cut(&self) -> Result<BarrierCut, StreamsClientError> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        self.send_barrier(BarrierRequest::RestoreToLatestCut { reply }, rx)
+            .await
+    }
+
+    /// Sends one rewind to the supervisor and waits for its answer.
+    async fn send_barrier(
+        &self,
+        request: BarrierRequest,
+        rx: tokio::sync::oneshot::Receiver<Result<BarrierCut, StreamsClientError>>,
+    ) -> Result<BarrierCut, StreamsClientError> {
+        let stopped = || StreamsClientError::Runtime("streams runtime has stopped".to_owned());
+        self.barrier_tx
+            .send(request)
+            .await
+            .map_err(|_error| stopped())?;
+        rx.await.map_err(|_error| stopped())?
     }
 
     /// Stop processing, commit, and leave the group.

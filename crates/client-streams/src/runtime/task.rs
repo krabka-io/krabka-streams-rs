@@ -9,6 +9,7 @@ use std::{
 };
 
 use crate::{
+    barrier::BarrierCut,
     error::StreamsClientError,
     membership::TopicPartition,
     processor::graph::Graph,
@@ -16,6 +17,7 @@ use crate::{
         eos::ProcessingGuarantee,
         io::{BeginTxnGate, IsolationLevel, OffsetStore, RecordFetcher, RecordProducer},
     },
+    store::snapshot::TaskSnapshot,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +49,12 @@ pub(crate) struct StreamTask {
     /// [`ProcessingGuarantee::ExactlyOnceV2`] the changelog restore reads
     /// `READ_COMMITTED`, so it excludes aborted writes.
     pub(crate) guarantee: ProcessingGuarantee,
+    /// The barrier cut this task holds its records back at.
+    ///
+    /// While a cut is pending, `process_once` pipes only the records below each
+    /// partition's marker offset and pins the position to that offset. The
+    /// thread clears the field when the barrier fires.
+    pending_cut: Option<BarrierCut>,
 }
 
 impl StreamTask {
@@ -77,6 +85,7 @@ impl StreamTask {
             role,
             changelog_offsets: HashMap::new(),
             guarantee,
+            pending_cut: None,
         }
     }
 
@@ -362,13 +371,37 @@ impl StreamTask {
         let keys: Vec<(String, i32)> = self.positions.keys().cloned().collect();
         for (topic, partition) in keys {
             let offset = self.positions[&(topic.clone(), partition)];
+            // The marker of a pending cut sits at `cut` and never reaches a
+            // consumer, so the records before the cut are exactly the records
+            // below `cut`.
+            let cut = self.cut_offset(&topic, partition);
+            // A partition already at its cut offset has delivered everything
+            // before the cut. It fetches nothing more until the barrier fires.
+            if cut.is_some_and(|cut| offset >= cut) {
+                continue;
+            }
             // Source records: normal processing reads READ_UNCOMMITTED.
             let batch = fetcher
                 .fetch(&topic, partition, offset, IsolationLevel::ReadUncommitted)
                 .await?;
+            let held = cut.and_then(|cut| batch.records.iter().position(|r| r.offset >= cut));
+            let records = &batch.records[..held.unwrap_or(batch.records.len())];
+            // A record at or above the cut proves every earlier record arrived,
+            // so the position pins to the cut and not to one past the last
+            // record below it.
+            let next = match (held, cut) {
+                (Some(_), Some(cut)) => cut,
+                _ => batch.next_offset(offset),
+            };
             // An empty batch advances nothing and produces nothing — skip it so
-            // the EOS begin-gate is not tripped by an idle partition.
-            if batch.records.is_empty() {
+            // the EOS begin-gate is not tripped by an idle partition. A batch
+            // whose records all sit past the cut still moves the position onto
+            // the cut, so the barrier can fire.
+            if records.is_empty() {
+                if next > offset {
+                    self.positions.insert((topic.clone(), partition), next);
+                    self.pending.insert((topic, partition), next);
+                }
                 continue;
             }
             // EOS: open the transaction lazily before the first produced record
@@ -376,10 +409,12 @@ impl StreamTask {
             if let Some(gate) = begin_gate.as_deref_mut() {
                 gate.ensure_begun().await?;
             }
-            for rec in &batch.records {
+            for rec in records {
                 self.graph
                     .pipe(
                         &topic,
+                        partition,
+                        rec.offset,
                         rec.key.as_deref(),
                         rec.value.as_deref().unwrap_or(&[]),
                         rec.timestamp,
@@ -406,7 +441,6 @@ impl StreamTask {
             // at the graph's current stream-time. Their forwarded records flow
             // through the same sink-produce + changelog-drain path as records.
             self.punctuate_stream_time().await?;
-            let next = batch.next_offset(offset);
             self.positions.insert((topic.clone(), partition), next);
             self.pending.insert((topic, partition), next);
         }
@@ -539,6 +573,114 @@ impl StreamTask {
             .collect();
         self.store.commit(&offsets).await?;
         self.pending.clear();
+        Ok(())
+    }
+
+    /// The marker offset of a pending cut for one source partition.
+    ///
+    /// The result is `None` when no cut is pending, and when the pending cut
+    /// does not name the partition. A partition the cut does not name is not in
+    /// the barrier group, so nothing holds it back.
+    fn cut_offset(&self, topic: &str, partition: i32) -> Option<i64> {
+        self.pending_cut
+            .as_ref()
+            .and_then(|cut| cut.offset(topic, partition))
+    }
+
+    /// Holds this task's records back at `cut`.
+    pub(crate) fn begin_barrier(&mut self, cut: BarrierCut) {
+        self.pending_cut = Some(cut);
+    }
+
+    /// Whether every source partition of this task reached the pending cut.
+    ///
+    /// The result is `false` when no cut is pending. A partition the cut does
+    /// not name reports reached, so a task that consumes a topic outside the
+    /// barrier group never blocks the barrier.
+    pub(crate) fn barrier_reached(&self) -> bool {
+        let Some(cut) = self.pending_cut.as_ref() else {
+            return false;
+        };
+        self.positions
+            .iter()
+            .all(|((topic, partition), position)| cut.reached(topic, *partition, *position))
+    }
+
+    /// Drops the pending cut once the barrier fires.
+    pub(crate) fn finish_barrier(&mut self) {
+        self.pending_cut = None;
+    }
+
+    /// Snapshots every store at the barrier.
+    ///
+    /// The order is the one the barrier needs: flush the record caches, which
+    /// emits their deduped changes and their changelog, then flush the producer,
+    /// then read every store. The snapshot then holds every write that belongs
+    /// before the cut and nothing that comes after it.
+    #[tracing::instrument(
+        name = "streams.task.snapshot_at_barrier",
+        level = "info",
+        skip_all,
+        fields(subtopology = %self.subtopology_id, partition = self.partition),
+        err,
+    )]
+    pub(crate) async fn snapshot_at_barrier(&mut self) -> Result<TaskSnapshot, StreamsClientError> {
+        self.flush_caches().await?;
+        self.producer.flush().await?;
+        Ok(self.graph.snapshot_stores().await)
+    }
+
+    /// Commits the source offsets that advanced since the last commit, and
+    /// reports them.
+    ///
+    /// The at-least-once barrier calls this method after it persists the
+    /// snapshot, so the committed position becomes the cut.
+    pub(crate) async fn commit_pending(
+        &mut self,
+    ) -> Result<Vec<(String, i32, i64)>, StreamsClientError> {
+        let offsets = self.pending_offsets();
+        if offsets.is_empty() {
+            return Ok(offsets);
+        }
+        self.store.commit(&offsets).await?;
+        self.pending.clear();
+        Ok(offsets)
+    }
+
+    /// Rewinds this task to a cut.
+    ///
+    /// The stores become the snapshot taken at that cut, and every source
+    /// partition the cut names seeks to its marker offset. The offsets go into
+    /// the pending set, so the next commit writes the cut as the committed
+    /// position.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StreamsClientError::Snapshot`] when a store rejects its
+    /// payload.
+    #[tracing::instrument(
+        name = "streams.task.restore_to_cut",
+        level = "info",
+        skip_all,
+        fields(subtopology = %self.subtopology_id, partition = self.partition, epoch = cut.epoch),
+        err,
+    )]
+    pub(crate) async fn restore_to_cut(
+        &mut self,
+        cut: &BarrierCut,
+        snapshot: &TaskSnapshot,
+    ) -> Result<(), StreamsClientError> {
+        self.pending_cut = None;
+        self.pending.clear();
+        self.graph.restore_store_snapshots(snapshot).await?;
+        let keys: Vec<(String, i32)> = self.positions.keys().cloned().collect();
+        for (topic, partition) in keys {
+            let Some(offset) = cut.offset(&topic, partition) else {
+                continue;
+            };
+            self.positions.insert((topic.clone(), partition), offset);
+            self.pending.insert((topic, partition), offset);
+        }
         Ok(())
     }
 
@@ -1590,6 +1732,308 @@ mod tests {
         check!(
             last_produce_idx < commit_idx,
             "cache-flushed sink + changelog output must be produced BEFORE the offset commit, got {events:?}"
+        );
+    }
+
+    // ─── barrier alignment ────────────────────────────────────────────────────
+
+    /// Two source topics into one processor, so a cut can name two partitions
+    /// of one task.
+    fn two_source_built() -> crate::topology::BuiltTopology {
+        let mut t = Topology::new();
+        let a: NodeHandle<String, String> = t.add_source("src-a", ["in"]);
+        let b: NodeHandle<String, String> = t.add_source("src-b", ["in2"]);
+        let up = t.add_processor("up", || Upper, [&a, &b]);
+        t.add_sink("out", "out", [&up]);
+        t.build("app").unwrap()
+    }
+
+    /// Records the [`RecordContext`] of every record it sees.
+    struct ContextRecorder {
+        seen: std::sync::Arc<StdMutex<Vec<crate::processor::record::RecordContext>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl Processor<String, String, String, String> for ContextRecorder {
+        async fn process(
+            &mut self,
+            ctx: &mut ProcessorContext<'_, '_, String, String>,
+            r: Record<String, String>,
+        ) {
+            self.seen.lock().unwrap().push(ctx.record_context().clone());
+            ctx.forward(r);
+        }
+    }
+
+    fn record(offset: i64, text: &str) -> FetchedRec {
+        FetchedRec {
+            offset,
+            key: None,
+            value: Some(bytes::Bytes::copy_from_slice(text.as_bytes())),
+            timestamp: offset,
+        }
+    }
+
+    /// A complete cut of group `txns` over the named partitions.
+    fn cut(epoch: i64, offsets: &[(&str, i32, i64)]) -> crate::barrier::BarrierCut {
+        let mut map: std::collections::BTreeMap<String, std::collections::BTreeMap<i32, i64>> =
+            std::collections::BTreeMap::new();
+        for (topic, partition, offset) in offsets {
+            map.entry((*topic).to_owned())
+                .or_default()
+                .insert(*partition, *offset);
+        }
+        crate::barrier::BarrierCut {
+            group: "txns".to_owned(),
+            epoch,
+            triggered_at: 1,
+            completed_at: 2,
+            status: crate::barrier::CutStatus::Complete,
+            offsets: crate::runtime::iqv2::request::Position(map),
+            missing: std::collections::BTreeSet::new(),
+        }
+    }
+
+    fn task_over(
+        built: &crate::topology::BuiltTopology,
+        sources: Vec<TopicPartition>,
+        producer: &std::sync::Arc<CollectProducer>,
+        store: &std::sync::Arc<MemStore>,
+    ) -> StreamTask {
+        StreamTask::new(
+            "0".into(),
+            pollster::block_on(built.instantiate(
+                &crate::store::backend::StoreBackend::InMemory,
+                "app",
+                ByteSize::ZERO,
+            ))
+            .unwrap(),
+            sources,
+            std::sync::Arc::clone(producer) as std::sync::Arc<dyn RecordProducer>,
+            std::sync::Arc::clone(store) as std::sync::Arc<dyn OffsetStore>,
+            TaskRole::Active,
+            ProcessingGuarantee::AtLeastOnce,
+        )
+    }
+
+    /// The values the task produced to the sink topic, in order.
+    fn sink_values(producer: &CollectProducer) -> Vec<String> {
+        producer
+            .sent
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(topic, _p, _k, _v)| topic == "out")
+            .map(|(_t, _p, _k, v)| {
+                String::from_utf8(v.clone().unwrap_or_default().to_vec()).unwrap()
+            })
+            .collect()
+    }
+
+    /// A pending cut holds every record at or above the marker offset, and the
+    /// barrier fires only once EVERY assigned partition sits at its cut offset.
+    #[tokio::test]
+    async fn barrier_fires_when_every_partition_reaches_its_cut_offset() {
+        let producer = std::sync::Arc::new(CollectProducer::default());
+        let store = std::sync::Arc::new(MemStore::default());
+        let mut task = task_over(
+            &two_source_built(),
+            vec![
+                TopicPartition {
+                    topic: "in".into(),
+                    partition: 0,
+                },
+                TopicPartition {
+                    topic: "in2".into(),
+                    partition: 0,
+                },
+            ],
+            &producer,
+            &store,
+        );
+        task.init().await.unwrap();
+        task.begin_barrier(cut(4, &[("in", 0, 2), ("in2", 0, 1)]));
+
+        // `in` delivers past its cut offset; `in2` has nothing yet.
+        let first = ScriptedFetcher::new(vec![(
+            ("in".to_string(), 0, 0),
+            FetchBatch {
+                records: vec![record(0, "a"), record(1, "b"), record(2, "c")],
+            },
+        )]);
+        task.process_once(&first, None).await.unwrap();
+        // "c" sits AT the cut offset, so it stays for the next round.
+        check!(sink_values(&producer) == vec!["A".to_string(), "B".to_string()]);
+        check!(task.position() == cut(4, &[("in", 0, 2), ("in2", 0, 0)]).offsets);
+        check!(!task.barrier_reached());
+
+        // `in2` catches up. `in` is already at its cut, so it fetches nothing.
+        let second = ScriptedFetcher::new(vec![(
+            ("in2".to_string(), 0, 0),
+            FetchBatch {
+                records: vec![record(0, "x"), record(1, "y")],
+            },
+        )]);
+        task.process_once(&second, None).await.unwrap();
+        check!(sink_values(&producer) == vec!["A".to_string(), "B".to_string(), "X".to_string()]);
+        check!(task.position() == cut(4, &[("in", 0, 2), ("in2", 0, 1)]).offsets);
+        check!(task.barrier_reached());
+
+        // The commit puts the committed position exactly on the cut.
+        task.commit_pending().await.unwrap();
+        check!(store.committed.lock().unwrap().get(&("in".to_string(), 0)) == Some(&2));
+        check!(store.committed.lock().unwrap().get(&("in2".to_string(), 0)) == Some(&1));
+    }
+
+    /// A partition that the cut does not name never holds the barrier back.
+    #[tokio::test]
+    async fn a_partition_outside_the_cut_does_not_block_the_barrier() {
+        let producer = std::sync::Arc::new(CollectProducer::default());
+        let store = std::sync::Arc::new(MemStore::default());
+        let mut task = task_over(
+            &two_source_built(),
+            vec![
+                TopicPartition {
+                    topic: "in".into(),
+                    partition: 0,
+                },
+                TopicPartition {
+                    topic: "in2".into(),
+                    partition: 0,
+                },
+            ],
+            &producer,
+            &store,
+        );
+        task.init().await.unwrap();
+        task.begin_barrier(cut(4, &[("in", 0, 1)]));
+        let fetcher = ScriptedFetcher::new(vec![
+            (
+                ("in".to_string(), 0, 0),
+                FetchBatch {
+                    records: vec![record(0, "a"), record(1, "b")],
+                },
+            ),
+            (
+                ("in2".to_string(), 0, 0),
+                FetchBatch {
+                    records: vec![record(0, "x")],
+                },
+            ),
+        ]);
+        task.process_once(&fetcher, None).await.unwrap();
+        // `in2` runs on past the cut, because the cut does not name it.
+        check!(task.position() == cut(4, &[("in", 0, 1), ("in2", 0, 1)]).offsets);
+        check!(task.barrier_reached());
+    }
+
+    /// A snapshot taken at a cut restores the stores byte for byte, and it seeks
+    /// every partition the cut names back to its marker offset.
+    #[tokio::test]
+    async fn a_snapshot_at_a_cut_restores_the_state_of_that_cut() {
+        let producer = std::sync::Arc::new(CollectProducer::default());
+        let store = std::sync::Arc::new(MemStore::default());
+        let mut task = task_over(
+            &stateful_built(),
+            vec![TopicPartition {
+                topic: "in".into(),
+                partition: 0,
+            }],
+            &producer,
+            &store,
+        );
+        task.init().await.unwrap();
+        task.begin_barrier(cut(4, &[("in", 0, 2)]));
+
+        let fetcher = ScriptedFetcher::new(vec![(
+            ("in".to_string(), 0, 0),
+            FetchBatch {
+                records: vec![record(0, "a"), record(1, "a"), record(2, "a")],
+            },
+        )]);
+        task.process_once(&fetcher, None).await.unwrap();
+        check!(task.barrier_reached());
+        let at_cut = task.snapshot_at_barrier().await.unwrap();
+        check!(task.store_get_i64("counts", &"a".to_string()).await == Some(2));
+        task.finish_barrier();
+
+        // Two more records move the store and the position past the cut.
+        let more = ScriptedFetcher::new(vec![(
+            ("in".to_string(), 0, 2),
+            FetchBatch {
+                records: vec![record(3, "a"), record(4, "a")],
+            },
+        )]);
+        task.process_once(&more, None).await.unwrap();
+        check!(task.store_get_i64("counts", &"a".to_string()).await == Some(4));
+
+        // The rewind puts back the state and the position of the cut.
+        task.restore_to_cut(&cut(4, &[("in", 0, 2)]), &at_cut)
+            .await
+            .unwrap();
+        check!(task.store_get_i64("counts", &"a".to_string()).await == Some(2));
+        check!(task.position() == cut(4, &[("in", 0, 2)]).offsets);
+        // Re-reading the restored stores gives the same bytes as the snapshot.
+        check!(task.snapshot_at_barrier().await.unwrap() == at_cut);
+    }
+
+    /// `Graph::pipe` used to stamp `partition: 0, offset: 0` on every source
+    /// record, so `record_context()` reported a provenance no record had. The
+    /// context must carry the record's real topic, partition, and offset.
+    #[tokio::test]
+    async fn a_processor_sees_the_real_partition_and_offset_of_its_record() {
+        use crate::processor::record::RecordContext;
+
+        let seen = std::sync::Arc::new(StdMutex::new(Vec::new()));
+        let contexts = std::sync::Arc::clone(&seen);
+        let mut topology = Topology::new();
+        let src: NodeHandle<String, String> = topology.add_source("src", ["in"]);
+        let recorder = topology.add_processor(
+            "recorder",
+            move || ContextRecorder {
+                seen: std::sync::Arc::clone(&contexts),
+            },
+            [&src],
+        );
+        topology.add_sink("out", "out", [&recorder]);
+        let built = topology.build("app").unwrap();
+
+        let producer = std::sync::Arc::new(CollectProducer::default());
+        let store = std::sync::Arc::new(MemStore::default());
+        let mut task = task_over(
+            &built,
+            vec![TopicPartition {
+                topic: "in".into(),
+                partition: 3,
+            }],
+            &producer,
+            &store,
+        );
+        task.init().await.unwrap();
+        let fetcher = ScriptedFetcher::new(vec![(
+            ("in".to_string(), 3, 0),
+            FetchBatch {
+                records: vec![record(5, "a"), record(6, "b")],
+            },
+        )]);
+        task.process_once(&fetcher, None).await.unwrap();
+
+        check!(
+            *seen.lock().unwrap()
+                == vec![
+                    RecordContext {
+                        topic: "in".to_owned(),
+                        partition: 3,
+                        offset: 5,
+                        timestamp: 5,
+                    },
+                    RecordContext {
+                        topic: "in".to_owned(),
+                        partition: 3,
+                        offset: 6,
+                        timestamp: 6,
+                    },
+                ]
         );
     }
 }

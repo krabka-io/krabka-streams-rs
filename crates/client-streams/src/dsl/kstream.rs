@@ -2273,8 +2273,8 @@ mod to_table_caching_tests {
         pollster::block_on(g.init_processors()).unwrap();
 
         // Two same-key updates: 7 @0 then 9 @1.
-        pollster::block_on(g.pipe("in", Some(b"k"), &7i64.to_be_bytes(), 0)).unwrap();
-        pollster::block_on(g.pipe("in", Some(b"k"), &9i64.to_be_bytes(), 1)).unwrap();
+        pollster::block_on(g.pipe("in", 0, 0, Some(b"k"), &7i64.to_be_bytes(), 0)).unwrap();
+        pollster::block_on(g.pipe("in", 0, 1, Some(b"k"), &9i64.to_be_bytes(), 1)).unwrap();
         // Suppressed: nothing forwarded downstream until the cache flushes.
         check!(g.take_output().is_empty());
 

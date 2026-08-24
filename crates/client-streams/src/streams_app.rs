@@ -57,6 +57,7 @@ use crabka_units::prelude::*;
 use crate::{
     DEFAULT_STREAMS_STATE_STORE_CACHE_MAX_BYTES, StreamsInteractiveQueryQueueCapacity,
     StreamsJoinRetryBackoff, StreamsLeaveHeartbeatTimeout, StreamsRebalanceTimeout,
+    barrier::BarrierAlignment,
     dsl::StreamsBuilder,
     error::StreamsClientError,
     runtime::{KafkaStreams, StreamsCommitInterval, StreamsPollInterval, eos::ProcessingGuarantee},
@@ -86,6 +87,7 @@ pub struct StreamsApp {
     fetch_min: crabka_client_core::FetchMinBytes,
     cache_max_bytes: ByteSize,
     interactive_query_queue_capacity: StreamsInteractiveQueryQueueCapacity,
+    barrier: Option<BarrierAlignment>,
 }
 
 #[bon::bon]
@@ -142,6 +144,9 @@ impl StreamsApp {
         /// Capacity shared by the v1 and v2 interactive-query request queues.
         #[builder(default)]
         interactive_query_queue_capacity: StreamsInteractiveQueryQueueCapacity,
+        /// The barrier group to align on, and where each cut's snapshot lives.
+        /// Without one the app holds no record back and takes no snapshot.
+        barrier: Option<BarrierAlignment>,
     ) -> Self {
         let cache = SchemaCache::new(
             RegistryClient::new(schema_registry),
@@ -165,6 +170,7 @@ impl StreamsApp {
             fetch_min,
             cache_max_bytes,
             interactive_query_queue_capacity,
+            barrier,
         }
     }
 }
@@ -239,6 +245,7 @@ impl StreamsApp {
             .fetch_min(self.fetch_min.size())
             .cache_max_bytes(self.cache_max_bytes)
             .interactive_query_queue_capacity(self.interactive_query_queue_capacity)
+            .maybe_barrier(self.barrier)
             .build()
             .await
     }

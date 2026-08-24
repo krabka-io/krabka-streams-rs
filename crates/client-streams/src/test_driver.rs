@@ -34,6 +34,10 @@ pub struct TopologyTestDriver {
     /// driver passes it to `Graph::punctuate_wall_clock`. It starts at `0`, the
     /// same as the JVM `TopologyTestDriver` mock time at construction.
     mock_wall_ms: i64,
+    /// The next offset to stamp on a record of each topic. The driver has no
+    /// broker, so it numbers each topic's records from `0` as they are piped.
+    /// The number reaches a processor through `record_context()`.
+    offsets: HashMap<String, i64>,
     /// Changelog records the stores produced, collected in order as
     /// `(changelog_topic, key, value, record_ts)`. The driver has no broker, so
     /// it keeps the drained changelog here instead of discarding it. A test can
@@ -72,6 +76,7 @@ impl TopologyTestDriver {
             source_topics,
             output: HashMap::new(),
             mock_wall_ms: 0,
+            offsets: HashMap::new(),
             changelog_captured: Vec::new(),
         })
     }
@@ -100,6 +105,14 @@ impl TopologyTestDriver {
         self.pipe_bytes(topic, kb.as_deref(), &vb, timestamp);
     }
 
+    /// Claims the next offset of `topic`.
+    fn next_offset(&mut self, topic: &str) -> i64 {
+        let offset = self.offsets.entry(topic.to_string()).or_insert(0);
+        let claimed = *offset;
+        *offset += 1;
+        claimed
+    }
+
     fn pipe_bytes(&mut self, topic: &str, key: Option<&[u8]>, value: &[u8], timestamp: i64) {
         let mut queue: VecDeque<PendingRecord> = VecDeque::from([(
             topic.to_string(),
@@ -109,7 +122,8 @@ impl TopologyTestDriver {
         )]);
         while let Some((t, k, v, ts)) = queue.pop_front() {
             // run the graph for this topic; ignore unknown topics
-            let _ = pollster::block_on(self.graph.pipe(&t, k.as_deref(), &v, ts));
+            let offset = self.next_offset(&t);
+            let _ = pollster::block_on(self.graph.pipe(&t, 0, offset, k.as_deref(), &v, ts));
             self.route_outputs(&mut queue);
             // Stream-time advanced by this record → fire stream-time punctuators; their
             // forwarded records route like any output (and may loop back to a source).
@@ -129,7 +143,8 @@ impl TopologyTestDriver {
         self.route_outputs(&mut queue);
         // Drain any loopback the punctuators produced (and fire stream-time for those).
         while let Some((t, k, v, ts)) = queue.pop_front() {
-            let _ = pollster::block_on(self.graph.pipe(&t, k.as_deref(), &v, ts));
+            let offset = self.next_offset(&t);
+            let _ = pollster::block_on(self.graph.pipe(&t, 0, offset, k.as_deref(), &v, ts));
             self.route_outputs(&mut queue);
             let _ = pollster::block_on(self.graph.punctuate_stream_time(self.graph.stream_time));
             self.route_outputs(&mut queue);

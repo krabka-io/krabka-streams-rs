@@ -38,6 +38,14 @@ pub enum StreamsClientError {
     /// An interactive query failed.
     #[error(transparent)]
     InteractiveQuery(#[from] crate::runtime::iq::IqError),
+    /// A record on the `__barrier_state` topic does not match the frozen
+    /// layout. `part` names the record part that failed, either `key` or
+    /// `cut value`.
+    #[error("malformed barrier state {part}: {message}")]
+    BarrierFormat { part: &'static str, message: String },
+    /// A state-store snapshot could not be written, read, or decoded.
+    #[error("state snapshot error: {0}")]
+    Snapshot(String),
 }
 
 impl StreamsClientError {

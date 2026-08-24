@@ -4,16 +4,49 @@ use crabka_units::prelude::*;
 use tokio::sync::Mutex as TokioMutex;
 
 use crate::{
+    barrier::{Barrier, BarrierAlignment, BarrierCut, CutReader},
     error::StreamsClientError,
     membership::StreamsAssignment,
     runtime::{
         eos::{ProcessingGuarantee, StreamsGroupMeta, TransactionalProducer},
         io::{BeginTxnGate, OffsetStore, RecordFetcher, RecordProducer},
         iq::{IqRequest, answer_iq},
+        iqv2::request::Position,
         task::{StreamTask, TaskRole},
     },
+    store::snapshot::{SnapshotKey, TaskSnapshot},
     topology::BuiltTopology,
 };
+
+/// The identity of one task in the snapshot store.
+fn task_id(key: &(String, i32)) -> String {
+    format!("{}-{}", key.0, key.1)
+}
+
+/// The barrier state of one stream thread.
+///
+/// The thread adopts the next complete cut of its group, holds every task back
+/// at that cut, and fires the barrier when every task reaches it.
+struct ThreadBarrier {
+    alignment: BarrierAlignment,
+    reader: CutReader,
+    /// The cut every task holds back at, when one is pending.
+    pending: Option<BarrierCut>,
+    /// The epoch of the last cut this thread committed. It is `-1` before the
+    /// first one, which is the exclusive lower bound the reader takes.
+    last_epoch: i64,
+}
+
+impl ThreadBarrier {
+    fn new(alignment: BarrierAlignment, fetcher: &Arc<dyn RecordFetcher>) -> Self {
+        Self {
+            reader: CutReader::new(Arc::clone(fetcher)),
+            alignment,
+            pending: None,
+            last_epoch: -1,
+        }
+    }
+}
 
 pub(crate) struct StreamThread {
     tasks: HashMap<(String, i32), StreamTask>,
@@ -61,6 +94,9 @@ pub(crate) struct StreamThread {
     /// threads it into each task graph at `instantiate`. A zero budget disables
     /// caching.
     cache_max_bytes: ByteSize,
+    /// The barrier group this thread aligns on. It is `None` when the app names
+    /// no group, and the thread then never holds a record back.
+    barrier: Option<ThreadBarrier>,
 }
 
 impl StreamThread {
@@ -84,7 +120,18 @@ impl StreamThread {
             txn: None,
             initialized: false,
             in_txn: false,
+            barrier: None,
         }
+    }
+
+    /// Aligns this thread on a barrier group.
+    ///
+    /// The thread reads the group's cuts from `__barrier_state` with its own
+    /// fetcher, so no new I/O seam is needed.
+    #[must_use]
+    pub fn with_barrier(mut self, alignment: BarrierAlignment) -> Self {
+        self.barrier = Some(ThreadBarrier::new(alignment, &self.fetcher));
+        self
     }
 
     /// Test-only: swaps in a deterministic clock, for example `ManualClock`.
@@ -274,6 +321,263 @@ impl StreamThread {
         Ok(())
     }
 
+    /// Adopts the next complete cut of the barrier group when none is pending.
+    ///
+    /// Every active task then holds its records back at that cut. A partial cut
+    /// is never adopted, because the partitions it misses never receive the
+    /// epoch's marker and a task that waited for one would wait forever.
+    #[tracing::instrument(
+        name = "streams.thread.refresh_barrier",
+        level = "debug",
+        skip_all,
+        err
+    )]
+    async fn refresh_barrier(&mut self) -> Result<(), StreamsClientError> {
+        let Some(barrier) = self.barrier.as_mut() else {
+            return Ok(());
+        };
+        if barrier.pending.is_some() {
+            return Ok(());
+        }
+        let group = barrier.alignment.group().to_string();
+        let cuts = barrier
+            .reader
+            .complete_cuts_after(&group, barrier.last_epoch)
+            .await?;
+        let Some(cut) = cuts.into_iter().next() else {
+            return Ok(());
+        };
+        barrier.pending = Some(cut.clone());
+        for task in self.tasks.values_mut() {
+            if task.role == TaskRole::Active {
+                task.begin_barrier(cut.clone());
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether every active task reached the pending cut.
+    ///
+    /// A thread with no active task never fires, because there is nothing to
+    /// snapshot and nothing to commit.
+    fn barrier_ready(&self) -> bool {
+        if self.barrier.as_ref().is_none_or(|b| b.pending.is_none()) {
+            return false;
+        }
+        let mut active = false;
+        for task in self.tasks.values() {
+            if task.role != TaskRole::Active {
+                continue;
+            }
+            active = true;
+            if !task.barrier_reached() {
+                return false;
+            }
+        }
+        active
+    }
+
+    /// Snapshots every active task when the barrier is ready.
+    ///
+    /// The result is `None` when no cut is pending or a task is still short of
+    /// it. Each task flushes its caches and the producer before it reads its
+    /// stores, so the snapshot holds exactly the state at the cut.
+    async fn take_barrier_snapshots(
+        &mut self,
+    ) -> Result<Option<(BarrierCut, Vec<(String, TaskSnapshot)>)>, StreamsClientError> {
+        if !self.barrier_ready() {
+            return Ok(None);
+        }
+        let cut = self
+            .barrier
+            .as_ref()
+            .and_then(|barrier| barrier.pending.clone())
+            .expect("barrier_ready implies a pending cut");
+        let mut snapshots = Vec::new();
+        for key in self.active_task_keys() {
+            let task = self.tasks.get_mut(&key).expect("active task present");
+            snapshots.push((task_id(&key), task.snapshot_at_barrier().await?));
+        }
+        Ok(Some((cut, snapshots)))
+    }
+
+    /// The keys of every active task, in ascending order.
+    fn active_task_keys(&self) -> Vec<(String, i32)> {
+        let mut keys: Vec<(String, i32)> = self
+            .tasks
+            .iter()
+            .filter(|(_key, task)| task.role == TaskRole::Active)
+            .map(|(key, _task)| key.clone())
+            .collect();
+        keys.sort();
+        keys
+    }
+
+    /// Writes each task's snapshot under the cut's epoch.
+    async fn persist_barrier(
+        &mut self,
+        cut: &BarrierCut,
+        snapshots: &[(String, TaskSnapshot)],
+    ) -> Result<(), StreamsClientError> {
+        let Some((group, store)) = self.barrier.as_ref().map(|barrier| {
+            (
+                barrier.alignment.group().to_string(),
+                Arc::clone(barrier.alignment.snapshots()),
+            )
+        }) else {
+            return Ok(());
+        };
+        for (task, snapshot) in snapshots {
+            store
+                .save(&SnapshotKey::new(task.clone(), &group, cut.epoch), snapshot)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Closes a barrier the thread committed, and calls the listener.
+    fn finish_barrier(&mut self, cut: BarrierCut, tasks: Vec<String>, offsets: Position) {
+        for task in self.tasks.values_mut() {
+            task.finish_barrier();
+        }
+        let Some(barrier) = self.barrier.as_mut() else {
+            return;
+        };
+        barrier.pending = None;
+        barrier.last_epoch = cut.epoch;
+        let Some(listener) = barrier.alignment.listener() else {
+            return;
+        };
+        listener.on_barrier(&Barrier {
+            cut,
+            tasks,
+            offsets,
+        });
+    }
+
+    /// Fires the at-least-once barrier: snapshot, persist, then commit.
+    ///
+    /// The commit runs last, so the committed position of every aligned
+    /// partition **is** the cut. Under
+    /// [`ProcessingGuarantee::ExactlyOnceV2`] the barrier rides inside
+    /// [`eos_send_offsets_and_commit`](Self::eos_send_offsets_and_commit)
+    /// instead, and this method does nothing.
+    #[tracing::instrument(name = "streams.thread.fire_barrier", level = "info", skip_all, err)]
+    async fn fire_barrier(&mut self) -> Result<(), StreamsClientError> {
+        let Some((cut, snapshots)) = self.take_barrier_snapshots().await? else {
+            return Ok(());
+        };
+        self.persist_barrier(&cut, &snapshots).await?;
+        let mut offsets = Position::default();
+        for key in self.active_task_keys() {
+            let task = self.tasks.get_mut(&key).expect("active task present");
+            for (topic, partition, offset) in task.commit_pending().await? {
+                offsets
+                    .0
+                    .entry(topic)
+                    .or_default()
+                    .insert(partition, offset);
+            }
+        }
+        let tasks = snapshots.into_iter().map(|(task, _)| task).collect();
+        self.finish_barrier(cut, tasks, offsets);
+        Ok(())
+    }
+
+    /// Rewinds every active task to the cut of one epoch.
+    ///
+    /// Each task's stores become the snapshot taken at that cut, and every
+    /// source partition the cut names seeks to its marker offset.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the thread aligns on no barrier group, when the
+    /// group has no complete cut at `epoch`, or when a task has no snapshot at
+    /// that epoch.
+    pub(crate) async fn restore_to_epoch(
+        &mut self,
+        epoch: i64,
+    ) -> Result<BarrierCut, StreamsClientError> {
+        let cut = self.complete_cut(Some(epoch)).await?;
+        self.restore_to_cut(cut).await
+    }
+
+    /// Rewinds every active task to the complete cut with the highest epoch, as
+    /// [`restore_to_epoch`](Self::restore_to_epoch) does for a named epoch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the thread aligns on no barrier group, when the
+    /// group has no complete cut, or when a task has no snapshot at that cut.
+    pub(crate) async fn restore_to_latest_cut(&mut self) -> Result<BarrierCut, StreamsClientError> {
+        let cut = self.complete_cut(None).await?;
+        self.restore_to_cut(cut).await
+    }
+
+    /// Reads one complete cut of the group, by epoch or the newest one.
+    async fn complete_cut(&mut self, epoch: Option<i64>) -> Result<BarrierCut, StreamsClientError> {
+        let Some(barrier) = self.barrier.as_mut() else {
+            return Err(StreamsClientError::Runtime(
+                "restoring to a cut needs a barrier group".to_owned(),
+            ));
+        };
+        let group = barrier.alignment.group().to_string();
+        let found = match epoch {
+            Some(epoch) => barrier.reader.complete_cut_at(&group, epoch).await?,
+            None => barrier.reader.latest_complete_cut(&group).await?,
+        };
+        found.ok_or_else(|| {
+            StreamsClientError::Runtime(match epoch {
+                Some(epoch) => {
+                    format!("barrier group {group} has no complete cut at epoch {epoch}")
+                }
+                None => format!("barrier group {group} has no complete cut"),
+            })
+        })
+    }
+
+    #[tracing::instrument(
+        name = "streams.thread.restore_to_cut",
+        level = "info",
+        skip_all,
+        fields(epoch = cut.epoch, tasks = self.tasks.len()),
+        err,
+    )]
+    async fn restore_to_cut(&mut self, cut: BarrierCut) -> Result<BarrierCut, StreamsClientError> {
+        let Some((group, store)) = self.barrier.as_ref().map(|barrier| {
+            (
+                barrier.alignment.group().to_string(),
+                Arc::clone(barrier.alignment.snapshots()),
+            )
+        }) else {
+            return Err(StreamsClientError::Runtime(
+                "restoring to a cut needs a barrier group".to_owned(),
+            ));
+        };
+        for key in self.active_task_keys() {
+            let task = task_id(&key);
+            let snapshot = store
+                .load(&SnapshotKey::new(task.clone(), &group, cut.epoch))
+                .await?
+                .ok_or_else(|| {
+                    StreamsClientError::Snapshot(format!(
+                        "no snapshot for task {task} of barrier group {group} at epoch {}",
+                        cut.epoch
+                    ))
+                })?;
+            self.tasks
+                .get_mut(&key)
+                .expect("active task present")
+                .restore_to_cut(&cut, &snapshot)
+                .await?;
+        }
+        if let Some(barrier) = self.barrier.as_mut() {
+            barrier.pending = None;
+            barrier.last_epoch = cut.epoch;
+        }
+        Ok(cut)
+    }
+
     /// Abort the in-flight txn and roll back every task to the last committed
     /// state (rewind source offsets, wipe stores, re-restore from the committed
     /// changelog). Called on any error during an EOS process/commit cycle.
@@ -320,6 +624,9 @@ impl StreamThread {
                 .poll_once(fetcher, &mut self.global_offsets)
                 .await?;
         }
+        // Adopt the next complete cut before any task processes, so the tasks
+        // hold their records back at it in this same pass.
+        self.refresh_barrier().await?;
         match self.guarantee {
             ProcessingGuarantee::AtLeastOnce => {
                 for task in self.tasks.values_mut() {
@@ -355,6 +662,14 @@ impl StreamThread {
             if task.role == TaskRole::Active {
                 task.punctuate_wall_clock(now).await?;
             }
+        }
+
+        // At-least-once fires the barrier here, right after the last record and
+        // the last punctuator that belong before the cut. Exactly-once-v2 fires
+        // it inside the transaction commit instead, so the cut and the
+        // transaction boundary coincide.
+        if self.guarantee == ProcessingGuarantee::AtLeastOnce {
+            self.fire_barrier().await?;
         }
 
         // Update task offsets in the shared tracker.
@@ -433,6 +748,12 @@ impl StreamThread {
         &mut self,
         meta: Option<&StreamsGroupMeta>,
     ) -> Result<(), StreamsClientError> {
+        // The barrier rides inside this commit. The snapshots are read before
+        // `send_offsets_to_transaction` and they are stored only after
+        // `commit_transaction` succeeds, so the cut and the transaction boundary
+        // coincide and the snapshot is the committed state at that cut. A failed
+        // commit aborts and rolls back, and the epoch keeps no snapshot.
+        let barrier = self.take_barrier_snapshots().await?;
         let txn = self.txn.as_ref().expect("EOS txn producer");
         let mut offsets = Vec::new();
         for task in self.tasks.values() {
@@ -441,6 +762,19 @@ impl StreamThread {
         let meta = meta.expect("EOS commit requires group metadata");
         txn.send_offsets_to_transaction(&offsets, meta).await?;
         txn.commit_transaction().await?;
+        if let Some((cut, snapshots)) = barrier {
+            self.persist_barrier(&cut, &snapshots).await?;
+            let mut position = Position::default();
+            for (topic, partition, offset) in &offsets {
+                position
+                    .0
+                    .entry(topic.clone())
+                    .or_default()
+                    .insert(*partition, *offset);
+            }
+            let tasks = snapshots.into_iter().map(|(task, _)| task).collect();
+            self.finish_barrier(cut, tasks, position);
+        }
         Ok(())
     }
 
@@ -472,8 +806,21 @@ impl StreamThread {
                 }
             }
             ProcessingGuarantee::ExactlyOnceV2 => {
-                if !self.in_txn {
+                if !self.in_txn && !self.barrier_ready() {
                     return Ok(()); // nothing produced since last commit
+                }
+                if !self.in_txn {
+                    // The barrier commits the cut offsets even when the interval
+                    // produced no record, so the committed position is the cut.
+                    let txn = Arc::clone(self.txn.as_ref().expect("EOS txn producer"));
+                    if let Err(error) = txn.begin_transaction().await {
+                        if error.is_producer_fenced() {
+                            return Err(error);
+                        }
+                        self.abort_and_rollback().await?;
+                        return Ok(());
+                    }
+                    self.in_txn = true;
                 }
                 // Flush each task's record caches BEFORE sending offsets +
                 // committing the transaction, so the deduped `Change`s + their
@@ -698,7 +1045,7 @@ mod tests {
         sync::{Arc, Mutex as StdMutex},
     };
 
-    use assert2::check;
+    use assert2::{assert, check};
 
     use super::*;
     use crate::{
@@ -816,6 +1163,16 @@ mod tests {
             Self {
                 scripts: StdMutex::new(scripts.into_iter().collect()),
             }
+        }
+    }
+
+    impl ScriptedFetcher {
+        /// Adds the batch that one `(topic, partition, offset)` serves.
+        fn script(&self, topic: &str, partition: i32, offset: i64, batch: FetchBatch) {
+            self.scripts
+                .lock()
+                .unwrap()
+                .insert((topic.to_string(), partition, offset), batch);
         }
     }
 
@@ -2162,5 +2519,410 @@ mod tests {
             "flush Send must precede SendOffsets"
         );
         check!(send_offsets < commit, "SendOffsets must precede Commit");
+    }
+
+    // ─── barrier ──────────────────────────────────────────────────────────────
+
+    /// Keeps every saved snapshot in memory, so a test can name the keys the
+    /// barrier wrote.
+    #[derive(Default)]
+    struct MemSnapshotStore {
+        saved: StdMutex<HashMap<SnapshotKey, TaskSnapshot>>,
+    }
+
+    impl MemSnapshotStore {
+        fn keys(&self) -> Vec<SnapshotKey> {
+            let mut keys: Vec<SnapshotKey> = self.saved.lock().unwrap().keys().cloned().collect();
+            keys.sort();
+            keys
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::store::snapshot::SnapshotStore for MemSnapshotStore {
+        async fn save(
+            &self,
+            key: &SnapshotKey,
+            snapshot: &TaskSnapshot,
+        ) -> Result<(), StreamsClientError> {
+            self.saved
+                .lock()
+                .unwrap()
+                .insert(key.clone(), snapshot.clone());
+            Ok(())
+        }
+
+        async fn load(
+            &self,
+            key: &SnapshotKey,
+        ) -> Result<Option<TaskSnapshot>, StreamsClientError> {
+            Ok(self.saved.lock().unwrap().get(key).cloned())
+        }
+    }
+
+    /// The alignment, the snapshot store, and the barriers the listener saw.
+    type BarrierFixture = (
+        BarrierAlignment,
+        Arc<MemSnapshotStore>,
+        Arc<StdMutex<Vec<Barrier>>>,
+    );
+
+    fn barrier_fixture(group: &str) -> BarrierFixture {
+        let snapshots = Arc::new(MemSnapshotStore::default());
+        let seen = Arc::new(StdMutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        let listener: Arc<dyn crate::barrier::BarrierListener> =
+            Arc::new(move |barrier: &Barrier| sink.lock().unwrap().push(barrier.clone()));
+        let alignment = BarrierAlignment::on(
+            group,
+            Arc::clone(&snapshots) as Arc<dyn crate::store::snapshot::SnapshotStore>,
+        )
+        .with_listener(listener);
+        (alignment, snapshots, seen)
+    }
+
+    fn source_record(offset: i64, value: &str) -> FetchedRec {
+        FetchedRec {
+            offset,
+            key: None,
+            value: Some(bytes::Bytes::copy_from_slice(value.as_bytes())),
+            timestamp: offset,
+        }
+    }
+
+    /// Scripts one cut record onto partition `0` of the barrier state topic.
+    fn script_cut(fetcher: &ScriptedFetcher, cut: &crate::barrier::testing::CutRecord) {
+        use crate::barrier::testing::{cut_key, cut_value};
+
+        fetcher.script(
+            crate::barrier::BARRIER_STATE_TOPIC,
+            0,
+            0,
+            FetchBatch {
+                records: vec![FetchedRec {
+                    offset: 0,
+                    key: Some(cut_key(cut)),
+                    value: Some(cut_value(cut)),
+                    timestamp: -1,
+                }],
+            },
+        );
+    }
+
+    fn group_meta() -> crate::runtime::eos::StreamsGroupMeta {
+        crate::runtime::eos::StreamsGroupMeta {
+            group: "app".into(),
+            generation: 3,
+            member: "m".into(),
+            group_instance: None,
+        }
+    }
+
+    /// The cut offsets of `in-0`, as a `Position`.
+    fn cut_position(offset: i64) -> Position {
+        Position(
+            [("in".to_string(), [(0, offset)].into_iter().collect())]
+                .into_iter()
+                .collect(),
+        )
+    }
+
+    /// Under EOS-v2 the barrier must ride inside the one transaction commit, so
+    /// the cut and the transaction boundary coincide. The snapshot is stored
+    /// only after `commit_transaction` succeeds.
+    #[tokio::test]
+    async fn eos_barrier_rides_inside_the_transaction_commit() {
+        use crate::{
+            barrier::testing::CutRecord,
+            runtime::eos::mock::{MockTransactionalProducer, Step},
+        };
+
+        let mock = Arc::new(MockTransactionalProducer::default());
+        let producer: Arc<dyn RecordProducer> = Arc::clone(&mock) as _;
+        let txn: Arc<dyn TransactionalProducer> = Arc::clone(&mock) as _;
+        let store: Arc<dyn OffsetStore> = Arc::new(MemStore::default());
+
+        let fetcher = Arc::new(ScriptedFetcher::new(vec![]));
+        script_cut(&fetcher, &CutRecord::simple("txns", 4, &[("in", 0, 2)]));
+        fetcher.script(
+            "in",
+            0,
+            0,
+            FetchBatch {
+                records: vec![
+                    source_record(0, "a"),
+                    source_record(1, "b"),
+                    source_record(2, "c"),
+                ],
+            },
+        );
+
+        let (alignment, snapshots, seen) = barrier_fixture("txns");
+        let built = stateful_built();
+        let mut thread = StreamThread::new(
+            Arc::clone(&fetcher) as Arc<dyn RecordFetcher>,
+            crate::store::backend::StoreBackend::InMemory,
+            "app".into(),
+            ByteSize::ZERO,
+        )
+        .with_barrier(alignment);
+        thread
+            .apply_assignment(
+                &assignment(),
+                &built,
+                &producer,
+                &store,
+                ProcessingGuarantee::ExactlyOnceV2,
+                Some(Arc::clone(&txn)),
+            )
+            .await
+            .unwrap();
+
+        let tracker = Arc::new(TokioMutex::new(TaskOffsetTracker::default()));
+        thread.poll_all(&*fetcher, &tracker).await.unwrap();
+        // "c" sits at the cut offset, so only "a" and "b" reached the graph.
+        check!(
+            thread
+                .task_store_get_i64(&("0".to_string(), 0), "counts", &"c".to_string())
+                .await
+                == None
+        );
+        // Nothing is stored before the transaction commits.
+        check!(snapshots.keys().is_empty());
+        check!(seen.lock().unwrap().is_empty());
+
+        thread.commit_all(Some(&group_meta())).await.unwrap();
+
+        check!(
+            *mock.calls.lock().unwrap()
+                == vec![
+                    Step::Init,
+                    Step::Begin,
+                    Step::Send,
+                    Step::Send,
+                    Step::Send,
+                    Step::Send,
+                    Step::SendOffsets,
+                    Step::Commit,
+                ]
+        );
+        check!(snapshots.keys() == vec![SnapshotKey::new("0-0", "txns", 4)]);
+        let seen = seen.lock().unwrap();
+        check!(seen.len() == 1);
+        check!(seen[0].cut.epoch == 4);
+        check!(seen[0].tasks == vec!["0-0".to_string()]);
+        check!(seen[0].offsets == cut_position(2));
+    }
+
+    /// At-least-once fires the barrier in `poll_all`: snapshot, store, then
+    /// commit, so the committed position is the cut. A later rewind to that
+    /// epoch puts the stores and the positions back.
+    #[tokio::test]
+    async fn at_least_once_barrier_commits_the_cut_and_restore_rewinds_to_it() {
+        use crate::barrier::testing::CutRecord;
+
+        let producer: Arc<dyn RecordProducer> = Arc::new(CollectProducer::default());
+        let offsets = Arc::new(MemStore::default());
+        let store: Arc<dyn OffsetStore> = Arc::clone(&offsets) as _;
+
+        let fetcher = Arc::new(ScriptedFetcher::new(vec![]));
+        script_cut(&fetcher, &CutRecord::simple("txns", 4, &[("in", 0, 2)]));
+        fetcher.script(
+            "in",
+            0,
+            0,
+            FetchBatch {
+                records: vec![
+                    source_record(0, "a"),
+                    source_record(1, "a"),
+                    source_record(2, "a"),
+                ],
+            },
+        );
+
+        let (alignment, snapshots, seen) = barrier_fixture("txns");
+        let built = stateful_built();
+        let mut thread = StreamThread::new(
+            Arc::clone(&fetcher) as Arc<dyn RecordFetcher>,
+            crate::store::backend::StoreBackend::InMemory,
+            "app".into(),
+            ByteSize::ZERO,
+        )
+        .with_barrier(alignment);
+        thread
+            .apply_assignment(
+                &assignment(),
+                &built,
+                &producer,
+                &store,
+                ProcessingGuarantee::AtLeastOnce,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let tracker = Arc::new(TokioMutex::new(TaskOffsetTracker::default()));
+        thread.poll_all(&*fetcher, &tracker).await.unwrap();
+
+        let task = ("0".to_string(), 0);
+        check!(
+            thread
+                .task_store_get_i64(&task, "counts", &"a".to_string())
+                .await
+                == Some(2)
+        );
+        check!(snapshots.keys() == vec![SnapshotKey::new("0-0", "txns", 4)]);
+        check!(
+            offsets
+                .committed
+                .lock()
+                .unwrap()
+                .get(&("in".to_string(), 0))
+                == Some(&2)
+        );
+        check!(seen.lock().unwrap().len() == 1);
+
+        // The marker holds offset 2, so live data resumes at offset 3.
+        fetcher.script(
+            "in",
+            0,
+            2,
+            FetchBatch {
+                records: vec![source_record(3, "a"), source_record(4, "a")],
+            },
+        );
+        thread.poll_all(&*fetcher, &tracker).await.unwrap();
+        check!(
+            thread
+                .task_store_get_i64(&task, "counts", &"a".to_string())
+                .await
+                == Some(4)
+        );
+
+        let restored = thread.restore_to_epoch(4).await.unwrap();
+        check!(restored.epoch == 4);
+        check!(
+            thread
+                .task_store_get_i64(&task, "counts", &"a".to_string())
+                .await
+                == Some(2)
+        );
+        check!(thread.tasks[&task].position() == cut_position(2));
+    }
+
+    /// A partial cut names partitions that never receive the epoch's marker, so
+    /// a task that waited for one would wait forever. The thread must not adopt
+    /// it, and the records must run straight past the offsets it names.
+    #[tokio::test]
+    async fn a_partial_cut_is_never_adopted() {
+        use crate::barrier::testing::CutRecord;
+
+        let producer: Arc<dyn RecordProducer> = Arc::new(CollectProducer::default());
+        let store: Arc<dyn OffsetStore> = Arc::new(MemStore::default());
+
+        let fetcher = Arc::new(ScriptedFetcher::new(vec![]));
+        script_cut(
+            &fetcher,
+            &CutRecord::simple("txns", 4, &[("in", 0, 2)]).partial(&[("in", 1)]),
+        );
+        fetcher.script(
+            "in",
+            0,
+            0,
+            FetchBatch {
+                records: vec![
+                    source_record(0, "a"),
+                    source_record(1, "a"),
+                    source_record(2, "a"),
+                ],
+            },
+        );
+
+        let (alignment, snapshots, seen) = barrier_fixture("txns");
+        let built = stateful_built();
+        let mut thread = StreamThread::new(
+            Arc::clone(&fetcher) as Arc<dyn RecordFetcher>,
+            crate::store::backend::StoreBackend::InMemory,
+            "app".into(),
+            ByteSize::ZERO,
+        )
+        .with_barrier(alignment);
+        thread
+            .apply_assignment(
+                &assignment(),
+                &built,
+                &producer,
+                &store,
+                ProcessingGuarantee::AtLeastOnce,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let tracker = Arc::new(TokioMutex::new(TaskOffsetTracker::default()));
+        thread.poll_all(&*fetcher, &tracker).await.unwrap();
+
+        let task = ("0".to_string(), 0);
+        // All three records ran, so nothing was held at offset 2.
+        check!(
+            thread
+                .task_store_get_i64(&task, "counts", &"a".to_string())
+                .await
+                == Some(3)
+        );
+        check!(thread.tasks[&task].position() == cut_position(3));
+        check!(snapshots.keys().is_empty());
+        check!(seen.lock().unwrap().is_empty());
+    }
+
+    /// A rewind needs both a barrier group and a stored snapshot. Neither one
+    /// silently succeeds.
+    #[tokio::test]
+    async fn restore_to_a_cut_reports_a_missing_group_and_a_missing_snapshot() {
+        use crate::barrier::testing::CutRecord;
+
+        let producer: Arc<dyn RecordProducer> = Arc::new(CollectProducer::default());
+        let store: Arc<dyn OffsetStore> = Arc::new(MemStore::default());
+
+        let mut without_group = StreamThread::new(
+            empty_fetcher(),
+            crate::store::backend::StoreBackend::InMemory,
+            "app".into(),
+            ByteSize::ZERO,
+        );
+        assert!(let Err(error) = without_group.restore_to_latest_cut().await);
+        check!(error.to_string() == "runtime error: restoring to a cut needs a barrier group");
+
+        let fetcher = Arc::new(ScriptedFetcher::new(vec![]));
+        script_cut(&fetcher, &CutRecord::simple("txns", 4, &[("in", 0, 2)]));
+        let (alignment, _snapshots, _seen) = barrier_fixture("txns");
+        let mut thread = StreamThread::new(
+            Arc::clone(&fetcher) as Arc<dyn RecordFetcher>,
+            crate::store::backend::StoreBackend::InMemory,
+            "app".into(),
+            ByteSize::ZERO,
+        )
+        .with_barrier(alignment);
+        thread
+            .apply_assignment(
+                &assignment(),
+                &built(),
+                &producer,
+                &store,
+                ProcessingGuarantee::AtLeastOnce,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(let Err(error) = thread.restore_to_epoch(9).await);
+        check!(
+            error.to_string() == "runtime error: barrier group txns has no complete cut at epoch 9"
+        );
+        assert!(let Err(error) = thread.restore_to_epoch(4).await);
+        check!(
+            error.to_string()
+                == "state snapshot error: no snapshot for task 0-0 of barrier group txns at epoch 4"
+        );
     }
 }

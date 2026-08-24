@@ -1799,7 +1799,7 @@ mod tests {
             ByteSize::ZERO,
         ))
         .unwrap();
-        pollster::block_on(g.pipe("in", Some(b"k"), b"hi", 0)).unwrap();
+        pollster::block_on(g.pipe("in", 0, 0, Some(b"k"), b"hi", 0)).unwrap();
         let out = g.take_output();
         check!(out.len() == 1);
         check!(out[0].value.as_ref().unwrap().as_ref() == b"HI");
@@ -1913,7 +1913,7 @@ mod tests {
             ByteSize::ZERO,
         ))
         .unwrap();
-        pollster::block_on(g.pipe("in", None, b"hi", 0)).unwrap();
+        pollster::block_on(g.pipe("in", 0, 0, None, b"hi", 0)).unwrap();
         let out1 = g.take_output();
         check!(out1.iter().any(|o| o.topic == "rp"));
     }
@@ -1956,8 +1956,8 @@ mod tests {
             ByteSize::ZERO,
         ))
         .unwrap();
-        pollster::block_on(g.pipe("in", None, b"x", 0)).unwrap();
-        pollster::block_on(g.pipe("in", None, b"x", 1)).unwrap();
+        pollster::block_on(g.pipe("in", 0, 0, None, b"x", 0)).unwrap();
+        pollster::block_on(g.pipe("in", 0, 1, None, b"x", 1)).unwrap();
         // After two "x" records the count should be 2 (i64 big-endian = [0,0,0,0,0,0,0,2])
         check!(
             g.take_output()
@@ -2063,8 +2063,8 @@ mod tests {
         // Pipe two records for the SAME key, then flush: a cached store dedups the
         // two staged writes into ONE changelog entry. (Without caching the store
         // logs each put immediately → two entries; see the no-cache test below.)
-        pollster::block_on(g.pipe("in", None, b"x", 0)).unwrap();
-        pollster::block_on(g.pipe("in", None, b"x", 1)).unwrap();
+        pollster::block_on(g.pipe("in", 0, 0, None, b"x", 0)).unwrap();
+        pollster::block_on(g.pipe("in", 0, 1, None, b"x", 1)).unwrap();
         // No changelog buffered yet — cached writes defer logging to flush.
         check!(
             g.drain_changelogs(&std::collections::HashSet::new())
@@ -2092,8 +2092,8 @@ mod tests {
         check!(g.cache_owner.is_empty());
         check!(!g.stores.kv_is_cached("counts"));
 
-        pollster::block_on(g.pipe("in", None, b"x", 0)).unwrap();
-        pollster::block_on(g.pipe("in", None, b"x", 1)).unwrap();
+        pollster::block_on(g.pipe("in", 0, 0, None, b"x", 0)).unwrap();
+        pollster::block_on(g.pipe("in", 0, 1, None, b"x", 1)).unwrap();
         // Uncached: each put logs immediately → two changelog entries (no dedup).
         let cl = g.drain_changelogs(&std::collections::HashSet::new());
         check!(cl.len() == 2);

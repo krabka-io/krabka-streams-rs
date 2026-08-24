@@ -13,10 +13,16 @@
 use std::{any::Any, collections::BTreeMap};
 
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::{BufMut, Bytes};
 use crabka_units::prelude::*;
 
-use crate::{processor::serde::Serde, store::api::StateStore};
+use crate::{
+    processor::serde::Serde,
+    store::{
+        api::StateStore,
+        snapshot::{SnapshotReader, put_sized, store_payload},
+    },
+};
 
 /// A single resolved version.
 ///
@@ -195,6 +201,69 @@ impl<K: Send + 'static, V: Send + 'static> StateStore for VersionedBytesStore<K,
         self.chains.clear();
         self.changelog.clear();
         self.observed_stream_time = i64::MIN;
+    }
+    async fn snapshot(&mut self) -> Bytes {
+        // A versioned store needs more than the byte backend, because it does
+        // not have one. Its state is a version chain per key plus the observed
+        // stream time, and the horizon that expires history comes from that
+        // time. A payload without it would restore a store that re-expires the
+        // wrong versions.
+        let mut buffer = store_payload();
+        buffer.put_i64(self.observed_stream_time);
+        buffer.put_u32(u32::try_from(self.chains.len()).expect("chain count fits u32"));
+        for (key, chain) in &self.chains {
+            put_sized(&mut buffer, key);
+            buffer.put_u32(u32::try_from(chain.len()).expect("version count fits u32"));
+            for (valid_from, value) in chain {
+                buffer.put_i64(*valid_from);
+                match value {
+                    Some(value) => {
+                        buffer.put_u8(1);
+                        put_sized(&mut buffer, value);
+                    }
+                    // A tombstone version holds no bytes of its own.
+                    None => buffer.put_u8(0),
+                }
+            }
+        }
+        buffer.freeze()
+    }
+    async fn restore_snapshot(
+        &mut self,
+        data: Bytes,
+    ) -> Result<(), crate::error::StreamsClientError> {
+        let mut reader = SnapshotReader::new(&data);
+        reader.store_version()?;
+        let observed_stream_time = reader.i64()?;
+        let chain_count = reader.u32()?;
+        let mut chains: BTreeMap<Bytes, BTreeMap<i64, Option<Bytes>>> = BTreeMap::new();
+        for _ in 0..chain_count {
+            let key = reader.sized()?;
+            let version_count = reader.u32()?;
+            let mut chain = BTreeMap::new();
+            for _ in 0..version_count {
+                let valid_from = reader.i64()?;
+                let value = match reader.u8()? {
+                    0 => None,
+                    1 => Some(reader.sized()?),
+                    tag => {
+                        return Err(crate::error::StreamsClientError::Snapshot(format!(
+                            "unknown versioned store value tag {tag}"
+                        )));
+                    }
+                };
+                chain.insert(valid_from, value);
+            }
+            chains.insert(key, chain);
+        }
+        reader.finish()?;
+        // Assign the chains as they were, and do not replay them through
+        // `insert_raw`. A replay would re-apply retention and could drop a
+        // version the snapshot kept.
+        self.chains = chains;
+        self.observed_stream_time = observed_stream_time;
+        self.changelog.clear();
+        Ok(())
     }
 }
 

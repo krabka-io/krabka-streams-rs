@@ -17,9 +17,15 @@
 use std::{any::Any, collections::BTreeMap};
 
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::{BufMut, Bytes};
 
-use crate::{processor::serde::Serde, store::api::StateStore};
+use crate::{
+    processor::serde::Serde,
+    store::{
+        api::StateStore,
+        snapshot::{SnapshotReader, put_byte_entries, read_byte_entries, store_payload},
+    },
+};
 
 /// Encodes a `(ts, seq)` buffer id as the changelog KEY.
 ///
@@ -53,6 +59,34 @@ fn encode_payload(kb: &[u8], vb: &[u8]) -> Bytes {
     buf.extend_from_slice(kb);
     buf.extend_from_slice(vb);
     Bytes::from(buf)
+}
+
+/// One buffered record as a snapshot holds it: the `(ts, seq)` id and the
+/// serialized key and value.
+type SnapshotEntry = ((i64, u32), (Bytes, Bytes));
+
+/// Decodes one snapshot entry, and rejects a truncated id or payload.
+///
+/// The changelog path can index its own bytes without a check, because the
+/// broker gave them back unchanged. A snapshot file can be corrupt, so this
+/// path validates the lengths first.
+fn decode_snapshot_entry(
+    id: &[u8],
+    payload: &[u8],
+) -> Result<SnapshotEntry, crate::error::StreamsClientError> {
+    let malformed = || {
+        crate::error::StreamsClientError::Snapshot(
+            "truncated join grace buffer snapshot entry".to_owned(),
+        )
+    };
+    if id.len() != 12 || payload.len() < 4 {
+        return Err(malformed());
+    }
+    let key_length = u32::from_be_bytes(payload[0..4].try_into().expect("4-byte key len")) as usize;
+    if payload.len() < 4 + key_length {
+        return Err(malformed());
+    }
+    Ok((decode_id(id), decode_payload(payload)))
 }
 
 /// Decodes a changelog VALUE back into `(key bytes, value bytes)`.
@@ -220,6 +254,39 @@ impl<K: 'static, V: 'static> StateStore for JoinGraceBufferStore<K, V> {
         self.buffer.clear();
         self.seq = 0;
         self.changelog.clear();
+    }
+    async fn snapshot(&mut self) -> Bytes {
+        // The buffer is in-process, so the payload carries the entries and the
+        // `seq` counter. An entry keeps the same `(ts, seq)` id it had, which is
+        // what orders the drain.
+        let entries: Vec<(Bytes, Bytes)> = self
+            .buffer
+            .iter()
+            .map(|(id, (kb, vb))| (encode_id(*id), encode_payload(kb, vb)))
+            .collect();
+        let mut buffer = store_payload();
+        buffer.put_u32(self.seq);
+        put_byte_entries(&mut buffer, &entries);
+        buffer.freeze()
+    }
+    async fn restore_snapshot(
+        &mut self,
+        data: Bytes,
+    ) -> Result<(), crate::error::StreamsClientError> {
+        let mut reader = SnapshotReader::new(&data);
+        reader.store_version()?;
+        let seq = reader.u32()?;
+        let entries = read_byte_entries(&mut reader)?;
+        reader.finish()?;
+        let mut restored = BTreeMap::new();
+        for (id, payload) in entries {
+            let (id, entry) = decode_snapshot_entry(&id, &payload)?;
+            restored.insert(id, entry);
+        }
+        self.buffer = restored;
+        self.seq = seq;
+        self.changelog.clear();
+        Ok(())
     }
 }
 

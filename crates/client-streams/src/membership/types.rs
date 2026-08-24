@@ -1,7 +1,10 @@
 //! Public value types surfaced by [`StreamsMembership`](super::StreamsMembership).
 
 /// A concrete topic-partition a task consumes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// The order is by topic first and then by partition, so a barrier cut can hold
+/// its missing partitions in a sorted set.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TopicPartition {
     pub topic: String,
     pub partition: i32,

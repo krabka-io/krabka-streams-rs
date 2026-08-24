@@ -18,6 +18,7 @@ use crate::{
     store::{
         api::StateStore,
         byte::ByteKeyValueStore,
+        snapshot::{restore_byte_store, snapshot_byte_store},
         window_schema::{unwrap_value, wrap_value},
     },
 };
@@ -141,6 +142,17 @@ impl StateStore for SubscriptionBytesStore {
     async fn clear(&mut self) {
         self.backend.clear().await;
         self.changelog.clear();
+    }
+    async fn snapshot(&mut self) -> Bytes {
+        snapshot_byte_store(self.backend.as_ref()).await
+    }
+    async fn restore_snapshot(
+        &mut self,
+        data: Bytes,
+    ) -> Result<(), crate::error::StreamsClientError> {
+        restore_byte_store(self.backend.as_mut(), &data).await?;
+        self.changelog.clear();
+        Ok(())
     }
     // No `as_iq` override: the subscription store is internal (not user-queryable),
     // so it keeps the trait default `None`.

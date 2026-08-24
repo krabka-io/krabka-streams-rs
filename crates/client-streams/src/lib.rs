@@ -943,6 +943,7 @@
 //! intact. `get_as_of` gives point-in-time reads.
 #![doc(html_root_url = "https://docs.rs/crabka-client-streams/0.4.0")]
 
+pub mod barrier;
 pub mod columnar;
 pub mod dsl;
 mod error;
@@ -956,6 +957,10 @@ pub mod topology;
 
 #[doc(hidden)]
 pub use async_trait::async_trait as __async_trait;
+pub use barrier::{
+    BARRIER_STATE_TOPIC, Barrier, BarrierAlignment, BarrierCut, BarrierListener, CutReader,
+    CutStatus, decode_barrier_cut,
+};
 pub use crabka_client_core::ClientDnsTimeout;
 pub use dsl::{
     BranchedStream, BufferConfig, CogroupedKStream, GlobalKTable, Grouped, JoinWindows, Joined,
@@ -993,7 +998,9 @@ pub use runtime::{
     },
 };
 pub use store::{
-    KeyValueBytesStore, KeyValueStore, StateStore, StoreBackend, iq::StoreKind,
+    KeyValueBytesStore, KeyValueStore, StateStore, StoreBackend,
+    iq::StoreKind,
+    snapshot::{FileSnapshotStore, NoSnapshotStore, SnapshotKey, SnapshotStore, TaskSnapshot},
     versioned::VersionedRecord,
 };
 pub use streams_app::StreamsApp;

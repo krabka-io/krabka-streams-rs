@@ -18,7 +18,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::{BufMut, Bytes};
 use crabka_units::prelude::*;
 
 use crate::{
@@ -26,7 +26,11 @@ use crate::{
     processor::serde::Serde,
     store::{
         api::StateStore,
-        suppress_bufval::{SuppressRecordCtx, deserialize_buffer_change, serialize_buffer_change},
+        snapshot::{SnapshotReader, put_sized, store_payload},
+        suppress_bufval::{
+            SuppressRecordCtx, deserialize_buffer_change, serialize_buffer_change,
+            try_deserialize_buffer_change,
+        },
     },
 };
 
@@ -243,6 +247,81 @@ impl<K: 'static, V: 'static> StateStore for SuppressBytesStore<K, V> {
         self.seq = 0;
         self.byte_size = 0;
         self.changelog.clear();
+    }
+    async fn snapshot(&mut self) -> Bytes {
+        // The buffer is in-process, so the payload carries the two accounting
+        // scalars as well as the entries. Each entry keeps its own `(buffer_time,
+        // seq)` slot, which is what orders eviction, and its value reuses the
+        // JVM-exact `BufferValue` codec. `prior` is not part of an entry, so the
+        // payload writes none and the reader gets `old` back verbatim.
+        let mut buffer = store_payload();
+        buffer.put_u64(self.seq);
+        buffer.put_u64(self.byte_size as u64);
+        buffer.put_u32(u32::try_from(self.entries.len()).expect("entry count fits u32"));
+        for ((buffer_time, seq), entry) in &self.entries {
+            buffer.put_i64(*buffer_time);
+            buffer.put_u64(*seq);
+            put_sized(&mut buffer, &entry.key_bytes);
+            let ctx = SuppressRecordCtx {
+                topic: self.changelog_topic.clone(),
+                partition: 0,
+                offset: 0,
+                timestamp: entry.record_ts,
+            };
+            let value = serialize_buffer_change(
+                &ctx,
+                None,
+                entry.old_bytes.as_deref(),
+                entry.new_bytes.as_deref(),
+                *buffer_time,
+            );
+            put_sized(&mut buffer, &value);
+        }
+        buffer.freeze()
+    }
+    async fn restore_snapshot(
+        &mut self,
+        data: Bytes,
+    ) -> Result<(), crate::error::StreamsClientError> {
+        let mut reader = SnapshotReader::new(&data);
+        reader.store_version()?;
+        let seq = reader.u64()?;
+        let byte_size = usize::try_from(reader.u64()?).map_err(|_error| {
+            crate::error::StreamsClientError::Snapshot(
+                "suppress buffer byte size does not fit this platform".to_owned(),
+            )
+        })?;
+        let count = reader.u32()?;
+        let mut entries = BTreeMap::new();
+        let mut index = HashMap::new();
+        for _ in 0..count {
+            let buffer_time = reader.i64()?;
+            let slot = (buffer_time, reader.u64()?);
+            let key_bytes = reader.sized()?;
+            let value = reader.sized()?;
+            let decoded = try_deserialize_buffer_change(&value).ok_or_else(|| {
+                crate::error::StreamsClientError::Snapshot(
+                    "malformed suppress buffer value in snapshot".to_owned(),
+                )
+            })?;
+            index.insert(key_bytes.clone(), slot);
+            entries.insert(
+                slot,
+                Entry {
+                    key_bytes,
+                    new_bytes: decoded.new.map(Bytes::from),
+                    old_bytes: decoded.old.map(Bytes::from),
+                    record_ts: decoded.ctx.timestamp,
+                },
+            );
+        }
+        reader.finish()?;
+        self.entries = entries;
+        self.index = index;
+        self.seq = seq;
+        self.byte_size = byte_size;
+        self.changelog.clear();
+        Ok(())
     }
 }
 

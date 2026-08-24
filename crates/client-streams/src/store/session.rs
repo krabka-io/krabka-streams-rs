@@ -89,6 +89,22 @@ impl Backing {
             Backing::Cached(c) => c.clear().await,
         }
     }
+
+    /// Serializes every entry, cache overlay included, as the store's payload.
+    async fn snapshot(&self) -> Bytes {
+        crate::store::snapshot::encode_byte_entries(&self.scan_all().await)
+    }
+
+    /// Replaces every entry with the payload's. The decode runs before the
+    /// wipe, so a malformed payload leaves the store untouched.
+    async fn restore(&mut self, data: &[u8]) -> Result<(), crate::error::StreamsClientError> {
+        let entries = crate::store::snapshot::decode_byte_entries(data)?;
+        self.clear().await;
+        for (key, value) in entries {
+            self.apply(key, Some(value)).await;
+        }
+        Ok(())
+    }
 }
 
 /// Typed session store keyed by `(K, start, end)`.
@@ -310,6 +326,18 @@ impl<K: Send + 'static, V: Send + 'static> StateStore for SessionBytesStore<K, V
     async fn clear(&mut self) {
         self.backing.clear().await;
         self.changelog.clear();
+    }
+    async fn snapshot(&mut self) -> Bytes {
+        self.backing.snapshot().await
+    }
+    async fn restore_snapshot(
+        &mut self,
+        data: Bytes,
+    ) -> Result<(), crate::error::StreamsClientError> {
+        self.backing.restore(&data).await?;
+        // The task rewinds to the cut, so anything logged since is gone.
+        self.changelog.clear();
+        Ok(())
     }
 }
 
