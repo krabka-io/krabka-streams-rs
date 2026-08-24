@@ -71,29 +71,29 @@ impl SuppressRecordCtx {
 
     /// Parses a context off the front of `buf`.
     ///
-    /// Returns the context and the trailing bytes.
-    fn read(buf: &[u8]) -> (Self, &[u8]) {
-        let timestamp = read_i64(&buf[0..I64]);
-        let offset = read_i64(&buf[I64..2 * I64]);
+    /// Returns the context and the trailing bytes, or `None` when `buf` is too
+    /// short or the topic is not UTF-8.
+    fn read(buf: &[u8]) -> Option<(Self, &[u8])> {
+        let timestamp = read_i64(buf.get(0..I64)?);
+        let offset = read_i64(buf.get(I64..2 * I64)?);
         let mut o = 2 * I64;
-        let topic_len =
-            usize::try_from(read_i32(&buf[o..o + I32])).expect("non-negative topic len");
+        let topic_len = usize::try_from(read_i32(buf.get(o..o + I32)?)).ok()?;
         o += I32;
-        let topic = String::from_utf8(buf[o..o + topic_len].to_vec()).expect("utf-8 topic");
+        let topic = String::from_utf8(buf.get(o..o + topic_len)?.to_vec()).ok()?;
         o += topic_len;
-        let partition = read_i32(&buf[o..o + I32]);
+        let partition = read_i32(buf.get(o..o + I32)?);
         o += I32;
         // headerCount (always 0 for suppress) — skip.
         o += I32;
-        (
+        Some((
             Self {
                 topic,
                 partition,
                 offset,
                 timestamp,
             },
-            &buf[o..],
-        )
+            buf.get(o..)?,
+        ))
     }
 }
 
@@ -143,50 +143,76 @@ pub(crate) fn serialize_buffer_change(
     b.freeze()
 }
 
+/// One `addValue` slot, which is either the `-1` null or a run of bytes.
+enum Slot {
+    Null,
+    Bytes(Vec<u8>),
+}
+
+impl Slot {
+    fn into_value(self) -> Option<Vec<u8>> {
+        match self {
+            Self::Null => None,
+            Self::Bytes(value) => Some(value),
+        }
+    }
+}
+
 /// Reads a length-prefixed value with the `addValue` rules, where `-1` is null.
 ///
-/// This function advances `o`.
-fn read_add_value(buf: &[u8], o: &mut usize) -> Option<Vec<u8>> {
-    let len = read_i32(&buf[*o..*o + I32]);
+/// This function advances `o`. It returns `None` when the buffer is too short.
+fn read_add_value(buf: &[u8], o: &mut usize) -> Option<Slot> {
+    let len = read_i32(buf.get(*o..*o + I32)?);
     *o += I32;
     if len == NULL {
-        return None;
+        return Some(Slot::Null);
     }
-    let len = usize::try_from(len).expect("non-negative length");
-    let v = buf[*o..*o + len].to_vec();
+    let len = usize::try_from(len).ok()?;
+    let v = buf.get(*o..*o + len)?.to_vec();
     *o += len;
-    Some(v)
+    Some(Slot::Bytes(v))
 }
 
 /// Parses a changelog VALUE back into a [`BufferedChange`].
+///
+/// # Panics
+///
+/// Panics when `bytes` is not a `BufferValue` payload. The changelog path uses
+/// this function, and the broker returns the bytes the store wrote. A path that
+/// can meet a corrupt buffer calls [`try_deserialize_buffer_change`] instead.
 pub(crate) fn deserialize_buffer_change(bytes: &[u8]) -> BufferedChange {
-    let (ctx, rest) = SuppressRecordCtx::read(bytes);
+    try_deserialize_buffer_change(bytes).expect("well-formed suppress buffer value")
+}
+
+/// Parses a changelog VALUE, and returns `None` when the bytes are malformed.
+pub(crate) fn try_deserialize_buffer_change(bytes: &[u8]) -> Option<BufferedChange> {
+    let (ctx, rest) = SuppressRecordCtx::read(bytes)?;
     // `rest` is offset 0 into the variable part; index into `bytes` from there.
     let base = bytes.len() - rest.len();
     let mut o = base;
-    let prior = read_add_value(bytes, &mut o);
+    let prior = read_add_value(bytes, &mut o)?.into_value();
     // old slot: may be the -2 alias.
-    let old_tag = read_i32(&bytes[o..o + I32]);
+    let old_tag = read_i32(bytes.get(o..o + I32)?);
     o += I32;
     let old = if old_tag == NULL {
         None
     } else if old_tag == SAME_AS_PRIOR {
         prior.clone()
     } else {
-        let len = usize::try_from(old_tag).expect("non-negative length");
-        let v = bytes[o..o + len].to_vec();
+        let len = usize::try_from(old_tag).ok()?;
+        let v = bytes.get(o..o + len)?.to_vec();
         o += len;
         Some(v)
     };
-    let new = read_add_value(bytes, &mut o);
-    let buffer_time = read_i64(&bytes[o..o + I64]);
-    BufferedChange {
+    let new = read_add_value(bytes, &mut o)?.into_value();
+    let buffer_time = read_i64(bytes.get(o..o + I64)?);
+    Some(BufferedChange {
         ctx,
         prior,
         old,
         new,
         buffer_time,
-    }
+    })
 }
 
 fn read_i64(b: &[u8]) -> i64 {

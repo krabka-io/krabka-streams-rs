@@ -595,8 +595,8 @@ mod cogroup_caching_tests {
         pollster::block_on(g.init_processors()).unwrap();
 
         // in1: key "a" value "xx" (len 2) → acc 2 ; in2: key "a" value "z" → acc 3.
-        pollster::block_on(g.pipe("in1", Some(b"a"), b"xx", 0)).unwrap();
-        pollster::block_on(g.pipe("in2", Some(b"a"), b"z", 1)).unwrap();
+        pollster::block_on(g.pipe("in1", 0, 0, Some(b"a"), b"xx", 0)).unwrap();
+        pollster::block_on(g.pipe("in2", 0, 0, Some(b"a"), b"z", 1)).unwrap();
         // Both per-input forwards suppressed until flush.
         check!(g.take_output().is_empty());
 

@@ -6,13 +6,14 @@
 use std::any::Any;
 
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::{BufMut, Bytes};
 
 use crate::{
     processor::serde::Serde,
     store::{
         api::StateStore,
         byte::{ByteKeyValueStore, InMemoryBytes},
+        snapshot::{SnapshotReader, put_byte_entries, read_byte_entries, store_payload},
         window_schema::{key_bytes_of, store_key, window_start_of},
     },
 };
@@ -115,6 +116,31 @@ impl<K: 'static, V: 'static> StateStore for JoinWindowBytesStore<K, V> {
         self.backend.clear().await;
         self.changelog.clear();
         self.seqnum = 0;
+    }
+    async fn snapshot(&mut self) -> Bytes {
+        // The seqnum rides with the entries. Without it a restored store would
+        // hand out composite keys that a retained duplicate already holds.
+        let mut buffer = store_payload();
+        buffer.put_u32(self.seqnum);
+        put_byte_entries(&mut buffer, &self.backend.scan_all().await);
+        buffer.freeze()
+    }
+    async fn restore_snapshot(
+        &mut self,
+        data: Bytes,
+    ) -> Result<(), crate::error::StreamsClientError> {
+        let mut reader = SnapshotReader::new(&data);
+        reader.store_version()?;
+        let seqnum = reader.u32()?;
+        let entries = read_byte_entries(&mut reader)?;
+        reader.finish()?;
+        self.backend.clear().await;
+        for (key, value) in entries {
+            self.backend.put(key, value).await;
+        }
+        self.seqnum = seqnum;
+        self.changelog.clear();
+        Ok(())
     }
 }
 

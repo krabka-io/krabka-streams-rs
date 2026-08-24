@@ -88,13 +88,21 @@ impl Graph {
         self.cache_max_bytes
     }
 
-    /// Feed one record that arrives on `topic`.
+    /// Feed one record that arrives at `offset` of `(topic, partition)`.
     ///
     /// This method runs the graph to completion and appends the sink outputs to
     /// `self.output`. It ignores an unknown topic.
+    ///
+    /// `partition` and `offset` are the record's real provenance, and they reach
+    /// a processor through
+    /// [`ProcessorContext::record_context`](crate::processor::ProcessorContext::record_context).
+    /// A caching store stamps them onto its deferred changelog record, and the
+    /// suppress buffer writes them into its changelog VALUE.
     pub async fn pipe(
         &mut self,
         topic: &str,
+        partition: i32,
+        offset: i64,
         key: Option<&[u8]>,
         value: &[u8],
         timestamp: i64,
@@ -103,8 +111,8 @@ impl Graph {
         let mut buffer: VecDeque<(usize, ErasedRecord)> = VecDeque::new();
         let rc = RecordContext {
             topic: topic.to_string(),
-            partition: 0,
-            offset: 0,
+            partition,
+            offset,
             timestamp,
         };
 
@@ -446,6 +454,44 @@ impl Graph {
             }
         }
     }
+
+    /// Snapshot every state store, keyed by store name.
+    ///
+    /// The barrier calls this method after the cache flush and the producer
+    /// flush, so the snapshot holds every write that belongs before the cut.
+    #[tracing::instrument(name = "streams.graph.snapshot_stores", level = "debug", skip_all)]
+    pub(crate) async fn snapshot_stores(&mut self) -> crate::store::snapshot::TaskSnapshot {
+        let mut snapshot = crate::store::snapshot::TaskSnapshot::new();
+        for store in self.stores.iter_mut() {
+            let name = store.name().to_string();
+            snapshot.insert(name, store.snapshot().await);
+        }
+        snapshot
+    }
+
+    /// Replace every state store with the snapshot taken at a cut.
+    ///
+    /// A store the snapshot does not name is wiped, so the restored graph holds
+    /// the state of the cut and nothing that came after it.
+    #[tracing::instrument(
+        name = "streams.graph.restore_store_snapshots",
+        level = "debug",
+        skip_all,
+        err
+    )]
+    pub(crate) async fn restore_store_snapshots(
+        &mut self,
+        snapshot: &crate::store::snapshot::TaskSnapshot,
+    ) -> Result<(), crate::error::StreamsClientError> {
+        for store in self.stores.iter_mut() {
+            let name = store.name().to_string();
+            match snapshot.get(&name) {
+                Some(data) => store.restore_snapshot(data.clone()).await?,
+                None => store.clear().await,
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Placeholder swapped into a `ScheduleEntry` while the real punctuator is out
@@ -512,7 +558,7 @@ mod tests {
             cache_owner: std::collections::HashMap::new(),
             cache: crate::store::cache::thread::ThreadCache::new(ByteSize::ZERO),
         };
-        graph.pipe("in", Some(b"k"), b"hi", 7).await.unwrap();
+        graph.pipe("in", 0, 0, Some(b"k"), b"hi", 7).await.unwrap();
         let out = graph.take_output();
         check!(out.len() == 1);
         check!(out[0].topic == "out-topic");
@@ -535,7 +581,7 @@ mod tests {
             cache_owner: std::collections::HashMap::new(),
             cache: crate::store::cache::thread::ThreadCache::new(ByteSize::ZERO),
         };
-        graph.pipe("nope", None, b"x", 0).await.unwrap();
+        graph.pipe("nope", 0, 0, None, b"x", 0).await.unwrap();
         check!(graph.take_output().is_empty());
     }
 
@@ -613,8 +659,8 @@ mod tests {
         };
 
         // pipe "in"/"a" twice — counter should accumulate to 2
-        graph.pipe("in", Some(b"k"), b"a", 1).await.unwrap();
-        graph.pipe("in", Some(b"k"), b"a", 2).await.unwrap();
+        graph.pipe("in", 0, 0, Some(b"k"), b"a", 1).await.unwrap();
+        graph.pipe("in", 0, 1, Some(b"k"), b"a", 2).await.unwrap();
 
         let out = graph.take_output();
         check!(out.len() == 2);
@@ -700,7 +746,7 @@ mod tests {
         // init schedules the punctuator: stream base i64::MIN -> next = MIN + 10.
         graph.init_processors().await.unwrap();
         // a record at ts=5 (no forward in `process`).
-        graph.pipe("in", Some(b"k"), b"v", 5).await.unwrap();
+        graph.pipe("in", 0, 0, Some(b"k"), b"v", 5).await.unwrap();
         // punctuate at stream-time 25: now=25 >= next=MIN+10 -> fire ONCE with
         // value=now=25; next resyncs to 35 (now - next >= interval).
         graph.punctuate_stream_time(25).await.unwrap();

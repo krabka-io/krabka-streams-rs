@@ -111,6 +111,36 @@ pub trait StateStore: Any + Send {
     /// this method to reset the store to a clean slate before it re-restores from
     /// the committed changelog.
     async fn clear(&mut self);
+    /// Serialize the whole store into one barrier-snapshot payload.
+    ///
+    /// The task calls this method for every store it owns when a barrier fires,
+    /// and it puts the payloads into the frozen snapshot container under the
+    /// store names. See [`crate::store::snapshot`].
+    ///
+    /// The payload holds every piece of state that
+    /// [`restore_snapshot`](Self::restore_snapshot) needs to rebuild the store,
+    /// which for some stores is more than the key-value entries. A suppress
+    /// buffer also carries its sequence counter and its byte-size total.
+    ///
+    /// The payload format is Rust's own. The container around it is shared with
+    /// `krabka-streams-java` and `krabka-streams-go`, the payload inside it is
+    /// not.
+    async fn snapshot(&mut self) -> bytes::Bytes;
+    /// Replace the whole store with a payload that
+    /// [`snapshot`](Self::snapshot) produced.
+    ///
+    /// The store is wiped first, so the restored state is the snapshot and
+    /// nothing else. This method does NOT re-log, exactly as `apply_changelog`
+    /// does not.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StreamsClientError::Snapshot`](crate::StreamsClientError::Snapshot)
+    /// when the payload does not match the format this store writes.
+    async fn restore_snapshot(
+        &mut self,
+        data: bytes::Bytes,
+    ) -> Result<(), crate::error::StreamsClientError>;
 }
 
 /// A keyed store. The in-memory store implements it, and a processor gets this
