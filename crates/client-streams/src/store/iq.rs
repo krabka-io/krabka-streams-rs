@@ -150,7 +150,7 @@ pub trait IqQueryable: Send + Sync {
 
 #[cfg(test)]
 mod tests {
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     use super::*;
     use crate::{

@@ -2,7 +2,7 @@
 //! carries the concrete source topic-partitions that its task reads, which come
 //! from the built topology.
 
-use crabka_protocol::owned::common::streams_group_heartbeat_response::task_ids::TaskIds;
+use krabka_protocol::owned::common::streams_group_heartbeat_response::task_ids::TaskIds;
 
 use super::types::{TaskAssignment, TopicPartition};
 use crate::topology::BuiltTopology;
@@ -41,7 +41,7 @@ pub(crate) fn resolve(
 #[cfg(test)]
 mod tests {
     use assert2::check;
-    use crabka_protocol::owned::common::streams_group_heartbeat_response::task_ids::TaskIds;
+    use krabka_protocol::owned::common::streams_group_heartbeat_response::task_ids::TaskIds;
 
     use super::*;
     use crate::topology::{NodeHandle, Topology};

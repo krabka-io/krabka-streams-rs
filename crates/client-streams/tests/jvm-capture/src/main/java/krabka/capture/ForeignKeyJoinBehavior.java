@@ -1,4 +1,4 @@
-package crabka.capture;
+package krabka.capture;
 
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
@@ -25,7 +25,7 @@ import java.util.Properties;
 import java.util.function.Supplier;
 
 /**
- * KIP-213 foreign-key-join byte + semantic ORACLE for the Crabka Rust FK-join codecs
+ * KIP-213 foreign-key-join byte + semantic ORACLE for the Krabka Rust FK-join codecs
  * and processors. Reflects the JVM's own internal FK-join classes (CombinedKeySchema,
  * SubscriptionWrapperSerde, SubscriptionResponseWrapperSerde, Murmur3) and dumps their
  * exact serialized bytes as hex, plus drives a {@link TopologyTestDriver} over the

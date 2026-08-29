@@ -1,17 +1,17 @@
-# crabka-client-streams
+# krabka-client-streams
 
-[![Crates.io](https://img.shields.io/crates/v/crabka-client-streams.svg)](https://crates.io/crates/crabka-client-streams)
-[![Docs.rs](https://docs.rs/crabka-client-streams/badge.svg)](https://docs.rs/crabka-client-streams)
+[![Crates.io](https://img.shields.io/crates/v/krabka-client-streams.svg)](https://crates.io/crates/krabka-client-streams)
+[![Docs.rs](https://docs.rs/krabka-client-streams/badge.svg)](https://docs.rs/krabka-client-streams)
 [![CI](https://github.com/robot-head/crabka/actions/workflows/ci.yml/badge.svg)](https://github.com/robot-head/crabka/actions/workflows/ci.yml)
 
 Kafka Streams-style topology, state-store, and membership runtime for Rust.
 
-Part of [Crabka](https://github.com/robot-head/crabka), a Rust implementation
+Part of [Krabka](https://github.com/robot-head/crabka), a Rust implementation
 of Apache Kafka-compatible infrastructure and clients.
 
 ## Overview
 
-`crabka-client-streams` is a Kafka Streams-inspired API on top of Crabka's
+`krabka-client-streams` is a Kafka Streams-inspired API on top of Krabka's
 producer, consumer, and protocol crates. It includes a typed topology DSL,
 processor API, state stores, broker-free topology tests, KIP-1071 streams-group
 membership, and a managed `KafkaStreams` runtime.
@@ -31,7 +31,7 @@ consumer loops.
 - KIP-1071 streams-group membership through `StreamsMembership`.
 - Managed `KafkaStreams` runtime with configurable processing guarantee and
   state backend.
-- Schema-aware serdes through `crabka-schema-serde`.
+- Schema-aware serdes through `krabka-schema-serde`.
 - Optional dataframe and columnar serde/topology support.
 
 ## Kafka Scope
@@ -52,7 +52,7 @@ local to the process.
 ## Install
 
 ```sh
-cargo add crabka-client-streams
+cargo add krabka-client-streams
 ```
 
 For workspace development, use the path dependency from this repository.
@@ -64,7 +64,7 @@ Build and join a streams group for a simple source-to-sink topology:
 ```rust,no_run
 use std::sync::Arc;
 
-use crabka_client_streams::{StreamsEvent, StreamsMembership, Topology};
+use krabka_client_streams::{StreamsEvent, StreamsMembership, Topology};
 
 # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 let mut topology = Topology::new();
@@ -93,7 +93,7 @@ through a topology and reads typed output from sink topics. It opens no Kafka
 connections.
 
 ```rust,no_run
-use crabka_client_streams::{Topology, TopologyTestDriver};
+use krabka_client_streams::{Topology, TopologyTestDriver};
 
 let mut topology = Topology::new();
 let source = topology.add_source::<String, String>("source", ["orders"]);
@@ -107,7 +107,7 @@ let mut driver = TopologyTestDriver::new(&built)?;
 ## Schema-Aware Payloads
 
 The `SchemaSerde<T, S>` bridge lets streams read and write Confluent-framed
-Avro, Protobuf, or JSON Schema payloads through `crabka-schema-serde`. Serdes
+Avro, Protobuf, or JSON Schema payloads through `krabka-schema-serde`. Serdes
 are topic-aware and match Kafka's `serialize(topic, value)` shape. The key and
 value roles derive `<topic>-key` or `<topic>-value` subjects from the topic that
 the caller passes at runtime.
@@ -115,9 +115,9 @@ the caller passes at runtime.
 Runnable examples live under `examples/`:
 
 ```sh
-cargo run -p crabka-client-streams --example avro_pipeline
-cargo run -p crabka-client-streams --example protobuf_pipeline
-cargo run -p crabka-client-streams --example json_pipeline
+cargo run -p krabka-client-streams --example avro_pipeline
+cargo run -p krabka-client-streams --example protobuf_pipeline
+cargo run -p krabka-client-streams --example json_pipeline
 ```
 
 ## Optional Columnar Support
@@ -129,7 +129,7 @@ Columnar and dataframe support is opt-in:
 - `columnar` - serde for `columnar::Columnar` values.
 
 ```sh
-cargo add crabka-client-streams --features polars
+cargo add krabka-client-streams --features polars
 ```
 
 Columnar topologies operate on batches within a consumed batch. Cross-batch
@@ -146,9 +146,9 @@ No optional feature is enabled by default.
 
 ## Documentation
 
-- [API documentation](https://docs.rs/crabka-client-streams)
-- [Schema serde crate](https://crates.io/crates/crabka-schema-serde)
-- [Crabka repository](https://github.com/robot-head/crabka)
+- [API documentation](https://docs.rs/krabka-client-streams)
+- [Schema serde crate](https://crates.io/crates/krabka-schema-serde)
+- [Krabka repository](https://github.com/robot-head/crabka)
 - [Kafka compatibility matrix](https://github.com/robot-head/crabka/blob/main/docs/KIP_MATRIX.md)
 
 ## License

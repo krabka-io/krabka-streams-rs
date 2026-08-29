@@ -2,9 +2,9 @@
 //! result as an IPC `DataFrame`.
 //!
 //! `ColumnarTestDriver` drives it in process, and it needs no broker.
-//! Run: `cargo run -p crabka-client-streams --features polars --example polars_pipeline`
+//! Run: `cargo run -p krabka-client-streams --features polars --example polars_pipeline`
 
-use crabka_client_streams::{
+use krabka_client_streams::{
     Serde,
     columnar::{
         serde::polars::PolarsIpcSerde,

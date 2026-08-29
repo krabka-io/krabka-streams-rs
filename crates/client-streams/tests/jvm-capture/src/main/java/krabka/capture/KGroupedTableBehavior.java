@@ -1,4 +1,4 @@
-package crabka.capture;
+package krabka.capture;
 
 import java.nio.file.*;
 import java.util.*;

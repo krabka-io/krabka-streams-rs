@@ -18,11 +18,11 @@
 //! the documentation calls `approximateNumEntries` approximate. Every other field
 //! is an exact match.
 
-use crabka_client_streams::{
+use krabka_client_streams::{
     Consumed, I64Serde, SessionWindows, StringSerde, TimeWindows, TopologyTestDriver,
     dsl::StreamsBuilder,
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 use serde_json::Value;
 
 /// The captured JVM golden, parsed once per test.

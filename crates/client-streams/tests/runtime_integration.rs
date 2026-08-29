@@ -3,12 +3,12 @@
 
 use std::time::Duration;
 
-use crabka_broker::{Broker, BrokerConfig, BrokerHandle};
-use crabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
-use crabka_client_streams::{
+use krabka_broker::{Broker, BrokerConfig, BrokerHandle};
+use krabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
+use krabka_client_streams::{
     KafkaStreams, NodeHandle, Processor, ProcessorContext, Record, Topology,
 };
-use crabka_protocol::owned::{
+use krabka_protocol::owned::{
     create_topics_request::{CreatableTopic, CreateTopicsRequest},
     update_features_request::{FeatureUpdateKey, UpdateFeaturesRequest},
 };
@@ -125,8 +125,8 @@ async fn collect_output(
             topic_id,
             0,
             next_offset,
-            crabka_units::millis(500),
-            crabka_units::mebibytes(1),
+            krabka_units::millis(500),
+            krabka_units::mebibytes(1),
         )
         .await
         .unwrap_or_default();
@@ -167,7 +167,7 @@ async fn kafka_streams_processes_records_end_to_end() {
     create_topic(&admin, "stream-out", 1).await;
 
     // 2. Produce 3 input records to stream-in.
-    let producer = crabka_client_producer::Producer::builder()
+    let producer = krabka_client_producer::Producer::builder()
         .bootstrap(&bootstrap)
         .build()
         .await
@@ -175,7 +175,7 @@ async fn kafka_streams_processes_records_end_to_end() {
     for (k, v) in [("k1", "hello"), ("k2", "world"), ("k3", "streams")] {
         drop(
             producer
-                .send(crabka_client_producer::ProducerRecord {
+                .send(krabka_client_producer::ProducerRecord {
                     topic: "stream-in".into(),
                     partition: Some(0),
                     key: Some(bytes::Bytes::copy_from_slice(k.as_bytes())),

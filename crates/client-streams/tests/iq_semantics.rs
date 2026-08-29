@@ -12,10 +12,10 @@
 //! lives in `iq_golden.rs`, which replays the same inputs and asserts parity with
 //! a captured JVM `TopologyTestDriver` run.
 
-use crabka_client_streams::{
+use krabka_client_streams::{
     Consumed, I64Serde, SessionWindows, StringSerde, TimeWindows, dsl::StreamsBuilder,
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 /// KV count store read semantics.
 ///
@@ -28,7 +28,7 @@ async fn iq_kv_count_read_semantics() {
         .group_by_key()
         .count("counts");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // a,a,b → count(a)=2, count(b)=1.
     for v in ["a", "a", "b"] {
         d.pipe_input(
@@ -112,7 +112,7 @@ async fn iq_window_count_read_semantics() {
         .windowed_by(TimeWindows::of_size(millis(10)))
         .count("wc");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // ts 3,7 → window [0,10) count 2; ts 12 → window [10,20) count 1.
     for ts in [3i64, 7, 12] {
         d.pipe_input(
@@ -167,7 +167,7 @@ async fn iq_session_count_read_semantics() {
         .windowed_by_session(SessionWindows::of_inactivity_gap(millis(60)))
         .count("sc");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // ts 0,30 merge into session [0,30] count 2; ts 200 is a new session [200,200] count 1.
     for ts in [0i64, 30, 200] {
         d.pipe_input(

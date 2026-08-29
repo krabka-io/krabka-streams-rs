@@ -1,9 +1,9 @@
-//! Bridges `crabka-schema-serde` typed serdes into the Streams `Serde<T>`
+//! Bridges `krabka-schema-serde` typed serdes into the Streams `Serde<T>`
 //! boundary, and implements the membership `SchemaPrewarm` hook for
 //! `SchemaCache`. The `schema-serde` feature gates this module.
 
 use bytes::Bytes;
-use crabka_schema_serde::{
+use krabka_schema_serde::{
     SchemaCache,
     format::{SchemaDeserializer, SchemaSerializer, SchemaSubject},
 };

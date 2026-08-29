@@ -1,4 +1,4 @@
-package crabka.capture;
+package krabka.capture;
 
 import org.apache.kafka.clients.consumer.internals.StreamsRebalanceData;
 import org.apache.kafka.common.message.StreamsGroupHeartbeatRequestData;
@@ -70,7 +70,7 @@ import java.util.function.Consumer;
  *       changelog/repartition TopicInfo, copartition groups encoded as int16 indices). This
  *       is the literal method {@code StreamsGroupHeartbeatRequestManager} calls when JOINING.</li>
  * </ol>
- * We then render each wire {@code Subtopology} into Crabka's snake_case wire JSON shape
+ * We then render each wire {@code Subtopology} into Krabka's snake_case wire JSON shape
  * (matching {@code testdata/golden/single_source_sink.topology.json}) and write one file
  * per topology.
  *
@@ -741,19 +741,19 @@ public final class Capture {
         return itb;
     }
 
-    // ---- render to Crabka wire JSON shape ------------------------------------
+    // ---- render to Krabka wire JSON shape ------------------------------------
 
     private static void write(Path outDir, String name,
                               Topology topology) throws Exception {
         List<StreamsGroupHeartbeatRequestData.Subtopology> subs = wireSubtopologies(topology);
-        String json = toCrabkaWireJson(subs);
+        String json = toKrabkaWireJson(subs);
         Path file = outDir.resolve(name + ".topology.json");
         Files.writeString(file, json, StandardCharsets.UTF_8);
         System.out.println("wrote " + file + "\n" + json);
     }
 
     /**
-     * Render the wire subtopologies into Crabka's snake_case wire JSON shape — the exact
+     * Render the wire subtopologies into Krabka's snake_case wire JSON shape — the exact
      * field set and ordering of {@code single_source_sink.topology.json}:
      * {@code epoch} + {@code subtopologies[]} with
      * {@code subtopology_id, source_topics, source_topic_regex, repartition_sink_topics,
@@ -762,7 +762,7 @@ public final class Capture {
      * <p>Topic arrays are already sorted by Kafka's converter; we do not re-sort.
      * Epoch is the topology epoch (0 for a freshly built topology).
      */
-    static String toCrabkaWireJson(List<StreamsGroupHeartbeatRequestData.Subtopology> subs) {
+    static String toKrabkaWireJson(List<StreamsGroupHeartbeatRequestData.Subtopology> subs) {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
         sb.append("  \"epoch\": 0,\n");

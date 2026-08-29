@@ -3,9 +3,9 @@
 //! The example reads JSON `OrderEvent`s, normalizes them to a Protobuf
 //! `OrderProto`, and writes them out. It needs an external broker and registry to
 //! run. By default it only builds the topology.
-//! Run: `cargo run -p crabka-client-streams --example format_dsl`
-use crabka_client_streams::{DefaultSerde, SchemaSerde, StreamsApp};
-use crabka_schema_serde::format::{json::JsonSerde, protobuf::ProtobufSerde};
+//! Run: `cargo run -p krabka-client-streams --example format_dsl`
+use krabka_client_streams::{DefaultSerde, SchemaSerde, StreamsApp};
+use krabka_schema_serde::format::{json::JsonSerde, protobuf::ProtobufSerde};
 use serde::{Deserialize, Serialize};
 
 pub const FILE_DESCRIPTOR_SET_BYTES: &[u8] = include_bytes!("gen/file_descriptor_set.bin");
@@ -50,9 +50,9 @@ impl DefaultSerde for OrderProto {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // A process-wide default registry lets the DefaultSerde-backed serdes
     // construct offline; building the topology graph needs no network.
-    crabka_schema_serde::set_default_registry(crabka_schema_serde::cache::SchemaCache::new(
-        crabka_schema_serde::RegistryClient::new("http://127.0.0.1:8081"),
-        crabka_schema_serde::cache::CacheConfig::default(),
+    krabka_schema_serde::set_default_registry(krabka_schema_serde::cache::SchemaCache::new(
+        krabka_schema_serde::RegistryClient::new("http://127.0.0.1:8081"),
+        krabka_schema_serde::cache::CacheConfig::default(),
     ));
 
     // docs:begin dsl-topology

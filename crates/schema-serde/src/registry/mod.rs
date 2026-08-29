@@ -24,7 +24,7 @@ pub struct RegistryClient {
     http: Client,
 }
 
-/// Schema text plus optional Crabka extension metadata fetched by global id.
+/// Schema text plus optional Krabka extension metadata fetched by global id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FetchedSchema {
     pub schema: String,

@@ -19,7 +19,7 @@ use std::{
 
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes};
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::{
     dsl::processors::change::Change,

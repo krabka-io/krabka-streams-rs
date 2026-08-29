@@ -190,7 +190,7 @@ impl SerdeAssociate for I64Serde {
 /// # Examples
 ///
 /// ```compile_fail
-/// use crabka_client_streams::{StreamsBuilder, KStream};
+/// use krabka_client_streams::{StreamsBuilder, KStream};
 ///
 /// struct CustomType;
 ///

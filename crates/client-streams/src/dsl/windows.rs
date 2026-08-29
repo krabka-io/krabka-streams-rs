@@ -1,6 +1,6 @@
 //! Time windows, the `Windowed<K>` output key, and a windowed output serde.
 use bytes::{BufMut, Bytes, BytesMut};
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::processor::serde::{Serde, SerdeAssociate, SerdeError};
 

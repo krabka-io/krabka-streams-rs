@@ -14,11 +14,11 @@
 //! ground truth.
 mod support;
 
-use crabka_client_streams::{Consumed, Grouped, I64Serde, Materialized, Produced, StringSerde};
+use krabka_client_streams::{Consumed, Grouped, I64Serde, Materialized, Produced, StringSerde};
 
 /// Build the combined topology shared by both tests and return the optimized build.
-fn build_combined() -> crabka_client_streams::topology::BuiltTopology {
-    use crabka_client_streams::dsl::StreamsBuilder;
+fn build_combined() -> krabka_client_streams::topology::BuiltTopology {
+    use krabka_client_streams::dsl::StreamsBuilder;
 
     let b = StreamsBuilder::new();
     let src = b.table_explicit(
@@ -93,8 +93,8 @@ fn kgrouped_table_topology_matches_jvm() {
 /// shared node-name counter. This pins the lowering's mint order against the JVM
 /// (`Capture.java::kgroupedTableAutoNamed`), which an explicit-store golden
 /// cannot do.
-fn build_autonamed() -> crabka_client_streams::topology::BuiltTopology {
-    use crabka_client_streams::dsl::StreamsBuilder;
+fn build_autonamed() -> krabka_client_streams::topology::BuiltTopology {
+    use krabka_client_streams::dsl::StreamsBuilder;
 
     let b = StreamsBuilder::new();
     let src = b.table_explicit(
@@ -149,7 +149,7 @@ struct Row {
 #[test]
 fn kgrouped_table_behavior_matches_jvm() {
     let built = build_combined();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     let s = StringSerde;
     for (k, v, ts) in [
         ("a", 2i64, 0),

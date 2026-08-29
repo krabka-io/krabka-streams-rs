@@ -20,10 +20,10 @@
 
 use std::time::Duration;
 
-use crabka_broker::{Broker, BrokerConfig, BrokerHandle};
-use crabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
-use crabka_client_streams::{KafkaStreams, StreamsBuilder};
-use crabka_protocol::owned::{
+use krabka_broker::{Broker, BrokerConfig, BrokerHandle};
+use krabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
+use krabka_client_streams::{KafkaStreams, StreamsBuilder};
+use krabka_protocol::owned::{
     create_topics_request::{CreatableTopic, CreateTopicsRequest},
     update_features_request::{FeatureUpdateKey, UpdateFeaturesRequest},
 };
@@ -72,10 +72,10 @@ async fn create_topic(client: &Client, topic: &str, partitions: i32) {
     assert_eq!(resp.topics[0].error_code, 0, "topic create: {resp:?}");
 }
 
-async fn produce(producer: &crabka_client_producer::Producer, topic: &str, key: &str, val: &str) {
+async fn produce(producer: &krabka_client_producer::Producer, topic: &str, key: &str, val: &str) {
     drop(
         producer
-            .send(crabka_client_producer::ProducerRecord {
+            .send(krabka_client_producer::ProducerRecord {
                 topic: topic.into(),
                 partition: Some(0),
                 key: Some(bytes::Bytes::copy_from_slice(key.as_bytes())),
@@ -104,7 +104,7 @@ async fn reader(bootstrap: &str, client_id: &str) -> Connection {
     .expect("connect")
 }
 
-async fn topic_id(admin: &Client, topic: &str) -> crabka_protocol::primitives::uuid::Uuid {
+async fn topic_id(admin: &Client, topic: &str) -> krabka_protocol::primitives::uuid::Uuid {
     let meta = admin.refresh_metadata().await.expect("metadata");
     meta.topics
         .iter()
@@ -129,8 +129,8 @@ async fn count_records(admin: &Client, bootstrap: &str, topic: &str) -> usize {
             tid,
             0,
             next,
-            crabka_units::millis(500),
-            crabka_units::mebibytes(1),
+            krabka_units::millis(500),
+            krabka_units::mebibytes(1),
         )
         .await
         .unwrap_or_default();
@@ -158,8 +158,8 @@ async fn poll_until_latest(admin: &Client, bootstrap: &str, topic: &str, key: &s
             tid,
             0,
             next,
-            crabka_units::millis(500),
-            crabka_units::mebibytes(1),
+            krabka_units::millis(500),
+            krabka_units::mebibytes(1),
         )
         .await
         .unwrap_or_default();
@@ -185,7 +185,7 @@ async fn poll_until_latest(admin: &Client, bootstrap: &str, topic: &str, key: &s
 /// `builder.table("rt-in", "rt-store").mapValues(id).toStream().to("rt-out")`,
 /// built with `build_optimized` so the `rt-store` changelog reuses the `rt-in`
 /// source topic. This matches the `table_reuse` wire golden.
-fn reuse_topology(app_id: &str) -> crabka_client_streams::BuiltTopology {
+fn reuse_topology(app_id: &str) -> krabka_client_streams::BuiltTopology {
     let b = StreamsBuilder::new();
     b.table::<String, String>("rt-in", "rt-store")
         .map_values(|v: &String| v.clone())
@@ -209,7 +209,7 @@ async fn reuse_source_topic_store_does_not_loop_changelog() {
     create_topic(&admin, "rt-in", 1).await;
     create_topic(&admin, "rt-out", 1).await;
 
-    let producer = crabka_client_producer::Producer::builder()
+    let producer = krabka_client_producer::Producer::builder()
         .bootstrap(&bootstrap)
         .build()
         .await

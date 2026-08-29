@@ -11,8 +11,8 @@
 //!
 //! ```no_run
 //! use apache_avro::AvroSchema;
-//! use crabka_client_streams::{DefaultSerde, SchemaSerde, StreamsApp};
-//! use crabka_schema_serde::format::avro::AvroSerde;
+//! use krabka_client_streams::{DefaultSerde, SchemaSerde, StreamsApp};
+//! use krabka_schema_serde::format::avro::AvroSerde;
 //! use serde::{Deserialize, Serialize};
 //!
 //! #[derive(Clone, Serialize, Deserialize, AvroSchema)]
@@ -47,12 +47,12 @@
 
 use std::sync::Arc;
 
-use crabka_schema_serde::{
+use krabka_schema_serde::{
     RegistryClient,
     cache::{CacheConfig, SchemaCache},
     set_default_registry,
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::{
     DEFAULT_STREAMS_STATE_STORE_CACHE_MAX_BYTES, StreamsInteractiveQueryQueueCapacity,
@@ -81,10 +81,10 @@ pub struct StreamsApp {
     rebalance_timeout: StreamsRebalanceTimeout,
     join_retry_backoff: StreamsJoinRetryBackoff,
     leave_heartbeat_timeout: StreamsLeaveHeartbeatTimeout,
-    broker_dns_timeout: crabka_client_core::ClientDnsTimeout,
-    client_dispatch_queue_capacity: crabka_client_core::ConnectionDispatchQueueCapacity,
-    client_frame_max: crabka_client_core::ClientFrameMax,
-    fetch_min: crabka_client_core::FetchMinBytes,
+    broker_dns_timeout: krabka_client_core::ClientDnsTimeout,
+    client_dispatch_queue_capacity: krabka_client_core::ConnectionDispatchQueueCapacity,
+    client_frame_max: krabka_client_core::ClientFrameMax,
+    fetch_min: krabka_client_core::FetchMinBytes,
     cache_max_bytes: ByteSize,
     interactive_query_queue_capacity: StreamsInteractiveQueryQueueCapacity,
     barrier: Option<BarrierAlignment>,
@@ -126,16 +126,16 @@ impl StreamsApp {
         leave_heartbeat_timeout: StreamsLeaveHeartbeatTimeout,
         /// Deadline for each Kafka broker DNS lookup owned by this process.
         #[builder(default)]
-        broker_dns_timeout: crabka_client_core::ClientDnsTimeout,
+        broker_dns_timeout: krabka_client_core::ClientDnsTimeout,
         /// Capacity shared by every outbound Kafka connection.
         #[builder(default)]
-        client_dispatch_queue_capacity: crabka_client_core::ConnectionDispatchQueueCapacity,
+        client_dispatch_queue_capacity: krabka_client_core::ConnectionDispatchQueueCapacity,
         /// Maximum frame size shared by every outbound Kafka connection.
         #[builder(default)]
-        client_frame_max: crabka_client_core::ClientFrameMax,
+        client_frame_max: krabka_client_core::ClientFrameMax,
         /// Minimum bytes requested by broker fetches.
         #[builder(default)]
-        fetch_min: crabka_client_core::FetchMinBytes,
+        fetch_min: krabka_client_core::FetchMinBytes,
         /// Record-cache budget, which is the JVM `statestore.cache.max.bytes`.
         /// `0` turns caching off. Default: 10 MiB, which matches the JVM
         /// default.
@@ -259,16 +259,16 @@ mod tests {
 
     #[test]
     fn cache_config_carries_schema_fetch_retry_policy() {
-        let policy = crabka_schema_serde::SchemaFetchRetryPolicy::new(
-            crabka_units::millis(37),
-            crabka_units::millis(91),
+        let policy = krabka_schema_serde::SchemaFetchRetryPolicy::new(
+            krabka_units::millis(37),
+            krabka_units::millis(91),
         )
         .unwrap();
         let app = StreamsApp::builder()
             .bootstrap("127.0.0.1:9092")
             .application_id("schema-retry")
             .schema_registry("http://127.0.0.1:8081")
-            .cache_config(crabka_schema_serde::CacheConfig {
+            .cache_config(krabka_schema_serde::CacheConfig {
                 fetch_retry_policy: policy,
                 ..Default::default()
             })
@@ -338,11 +338,11 @@ mod tests {
             .build();
         assert_eq!(
             defaults.broker_dns_timeout,
-            crabka_client_core::ClientDnsTimeout::default()
+            krabka_client_core::ClientDnsTimeout::default()
         );
 
         let timeout =
-            crabka_client_core::ClientDnsTimeout::new(millis(43)).expect("positive timeout");
+            krabka_client_core::ClientDnsTimeout::new(millis(43)).expect("positive timeout");
         let overridden = StreamsApp::builder()
             .bootstrap("127.0.0.1:9092")
             .application_id("override")
@@ -355,11 +355,11 @@ mod tests {
     #[test]
     fn client_resource_policy_uses_typed_defaults_and_overrides() {
         let dispatch =
-            crabka_client_core::ConnectionDispatchQueueCapacity::new(7).expect("positive capacity");
-        let frame = crabka_client_core::ClientFrameMax::try_from(kibibytes(32))
+            krabka_client_core::ConnectionDispatchQueueCapacity::new(7).expect("positive capacity");
+        let frame = krabka_client_core::ClientFrameMax::try_from(kibibytes(32))
             .expect("bounded frame maximum");
         let fetch =
-            crabka_client_core::FetchMinBytes::try_from(bytes(3)).expect("positive fetch minimum");
+            krabka_client_core::FetchMinBytes::try_from(bytes(3)).expect("positive fetch minimum");
         let app = StreamsApp::builder()
             .bootstrap("127.0.0.1:9092")
             .application_id("client-policy")

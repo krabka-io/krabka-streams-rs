@@ -16,7 +16,7 @@ use std::{
 
 use assert2::{assert, check};
 use bytes::Bytes;
-use crabka_client_streams::{
+use krabka_client_streams::{
     BARRIER_STATE_TOPIC, BarrierCut, CutReader, CutStatus, FileSnapshotStore, Position,
     SnapshotKey, SnapshotStore, StreamsClientError, TaskSnapshot, TopicPartition,
     decode_barrier_cut,
@@ -384,7 +384,7 @@ const SHARED_GOLDEN_VALUE: &[u8] = &[
 
 #[test]
 fn decodes_the_golden_vector_the_other_three_implementations_assert() {
-    assert!(let Ok(Some(cut)) = decode_barrier_cut(SHARED_GOLDEN_KEY, Some(SHARED_GOLDEN_VALUE)));
+    assert!(let Ok(Some(_cut)) = decode_barrier_cut(SHARED_GOLDEN_KEY, Some(SHARED_GOLDEN_VALUE)));
     let cut = decode_barrier_cut(SHARED_GOLDEN_KEY, Some(SHARED_GOLDEN_VALUE))
         .expect("decodes")
         .expect("is a cut");

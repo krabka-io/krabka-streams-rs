@@ -1,23 +1,23 @@
-# crabka-schema-serde
+# krabka-schema-serde
 
-[![Crates.io](https://img.shields.io/crates/v/crabka-schema-serde.svg)](https://crates.io/crates/crabka-schema-serde)
-[![Docs.rs](https://docs.rs/crabka-schema-serde/badge.svg)](https://docs.rs/crabka-schema-serde)
+[![Crates.io](https://img.shields.io/crates/v/krabka-schema-serde.svg)](https://crates.io/crates/krabka-schema-serde)
+[![Docs.rs](https://docs.rs/krabka-schema-serde/badge.svg)](https://docs.rs/krabka-schema-serde)
 [![CI](https://github.com/robot-head/crabka/actions/workflows/ci.yml/badge.svg)](https://github.com/robot-head/crabka/actions/workflows/ci.yml)
 
-Confluent-compatible schema serializers and deserializers for Crabka clients.
+Confluent-compatible schema serializers and deserializers for Krabka clients.
 
-Part of [Crabka](https://github.com/robot-head/crabka), a Rust implementation
+Part of [Krabka](https://github.com/robot-head/crabka), a Rust implementation
 of Apache Kafka-compatible infrastructure and clients.
 
 ## Overview
 
-`crabka-schema-serde` frames typed payloads with the Confluent Schema Registry
+`krabka-schema-serde` frames typed payloads with the Confluent Schema Registry
 wire format. It registers or resolves schemas through a Confluent-compatible
 REST API. It also gives clients synchronous hot-path serialize/deserialize
 calls, backed by an async `SchemaCache`.
 
-The crate is client-agnostic. It plugs into `crabka-client-streams` and
-`crabka-connect`. Applications that produce or consume Confluent-framed Kafka
+The crate is client-agnostic. It plugs into `krabka-client-streams` and
+`krabka-connect`. Applications that produce or consume Confluent-framed Kafka
 records directly can also use it.
 
 ## Capabilities
@@ -44,7 +44,7 @@ No schema format is on by default.
 ## Install
 
 ```sh
-cargo add crabka-schema-serde --features avro
+cargo add krabka-schema-serde --features avro
 cargo add apache-avro
 cargo add serde --features derive
 ```
@@ -58,9 +58,9 @@ deserialize records synchronously:
 
 ```rust,no_run
 use apache_avro::AvroSchema;
-use crabka_schema_serde::format::avro::AvroSerde;
-use crabka_schema_serde::format::{SchemaDeserializer, SchemaSerializer, SchemaSubject};
-use crabka_schema_serde::{CacheConfig, RegistryClient, SchemaCache};
+use krabka_schema_serde::format::avro::AvroSerde;
+use krabka_schema_serde::format::{SchemaDeserializer, SchemaSerializer, SchemaSubject};
+use krabka_schema_serde::{CacheConfig, RegistryClient, SchemaCache};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, AvroSchema)]
@@ -103,10 +103,10 @@ fetch. It returns a retriable `WriterSchemaPending` error until the cache fills.
 
 ## Documentation
 
-- [API documentation](https://docs.rs/crabka-schema-serde)
-- [Streams integration](https://crates.io/crates/crabka-client-streams)
-- [Connector integration](https://crates.io/crates/crabka-connect)
-- [Crabka repository](https://github.com/robot-head/crabka)
+- [API documentation](https://docs.rs/krabka-schema-serde)
+- [Streams integration](https://crates.io/crates/krabka-client-streams)
+- [Connector integration](https://crates.io/crates/krabka-connect)
+- [Krabka repository](https://github.com/robot-head/crabka)
 
 ## License
 

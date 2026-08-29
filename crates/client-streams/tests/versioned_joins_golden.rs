@@ -17,10 +17,10 @@
 mod support;
 
 use assert2::check;
-use crabka_client_streams::{
+use krabka_client_streams::{
     Consumed, I64Serde, Materialized, Produced, StringSerde, dsl::StreamsBuilder,
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 use serde::Deserialize;
 
 /// One String-valued output record in the table-table golden `out` array.
@@ -102,7 +102,7 @@ fn asof_stream_table_join_matches_golden() {
         .to_explicit("out", Produced::with(StringSerde, I64Serde));
     drop(table);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // Pipe the TABLE versions first so they exist when the stream side joins.
     for (k, v, ts) in [("a", 10_i64, 100_i64), ("a", 20, 200)] {
@@ -175,7 +175,7 @@ fn asof_stream_table_left_join_emits_on_miss() {
         .to_explicit("out", Produced::with(StringSerde, I64Serde));
     drop(table);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // TABLE version: (a,10)@100. There is no version for key `b`.
     d.pipe_input(
@@ -235,7 +235,7 @@ fn asof_stream_table_left_join_emits_on_miss() {
 /// `emit_on_miss = true` drain path and the left branch of `build_grace_lowering`.
 #[test]
 fn grace_stream_table_left_join_emits_on_miss() {
-    use crabka_client_streams::Joined;
+    use krabka_client_streams::Joined;
 
     let b = StreamsBuilder::new();
     let table = b.table_explicit::<StringSerde, I64Serde>(
@@ -252,7 +252,7 @@ fn grace_stream_table_left_join_emits_on_miss() {
         .to_explicit("out", Produced::with(StringSerde, I64Serde));
     drop(table);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // TABLE version: (a,10)@100. No version for key `b`.
     d.pipe_input(
@@ -339,8 +339,8 @@ fn load_grace_golden() -> GraceGolden {
 /// `600_000` to a `KStream` with a `60_000` ms grace period. The unoptimized
 /// `build("app")` reproduces the JVM's `KSTREAM-JOIN-0000000003` node and store
 /// names. The buffer store and its changelog hang off that node.
-fn build_grace_app() -> crabka_client_streams::topology::BuiltTopology {
-    use crabka_client_streams::Joined;
+fn build_grace_app() -> krabka_client_streams::topology::BuiltTopology {
+    use krabka_client_streams::Joined;
     let b = StreamsBuilder::new();
     let table = b.table_explicit::<StringSerde, I64Serde>(
         "table",
@@ -378,7 +378,7 @@ fn grace_stream_table_join_matches_golden() {
     let golden = load_grace_golden();
 
     let built = build_grace_app();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // 1. TABLE versions: (a,10)@100 then (a,20)@200.
     for (k, v, ts) in [("a", 10_i64, 100_i64), ("a", 20, 200)] {
@@ -520,7 +520,7 @@ fn grace_buffer_changelog_matches_golden_wire() {
 /// nothing.
 ///
 /// NOTE on the `describe()` divergence: it is intentional and is not a bug, so do
-/// NOT assert the JVM store-connection list here. Crabka detects out-of-order
+/// NOT assert the JVM store-connection list here. Krabka detects out-of-order
 /// records because the versioned join processor reads its OWN store's latest
 /// `valid_from`. Its `describe()` therefore lists the join connected to its own
 /// store in addition to the other side's. The JVM instead carries an internal
@@ -554,7 +554,7 @@ fn table_table_versioned_join_matches_golden() {
     drop(a);
     drop(b_table);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // Exact JVM drive sequence (topic, key, value, ts).
     let drive: [(&str, &str, &str, i64); 4] = [

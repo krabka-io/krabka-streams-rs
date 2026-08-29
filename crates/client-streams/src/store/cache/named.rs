@@ -19,7 +19,7 @@
 use std::collections::BTreeMap;
 
 use bytes::Bytes;
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::{processor::record::RecordContext, store::cache::entry::LruCacheEntry};
 

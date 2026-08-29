@@ -10,7 +10,7 @@ use std::{
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{

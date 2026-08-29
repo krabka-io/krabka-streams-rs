@@ -188,7 +188,7 @@ impl StoreRegistry {
 #[cfg(test)]
 mod tests {
     use assert2::check;
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     use super::*;
     use crate::{

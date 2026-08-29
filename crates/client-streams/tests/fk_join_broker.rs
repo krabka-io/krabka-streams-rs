@@ -27,10 +27,10 @@
 
 use std::time::Duration;
 
-use crabka_broker::{Broker, BrokerConfig, BrokerHandle};
-use crabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
-use crabka_client_streams::{KafkaStreams, StreamsBuilder, StringSerde};
-use crabka_protocol::owned::{
+use krabka_broker::{Broker, BrokerConfig, BrokerHandle};
+use krabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
+use krabka_client_streams::{KafkaStreams, StreamsBuilder, StringSerde};
+use krabka_protocol::owned::{
     create_topics_request::{CreatableTopic, CreateTopicsRequest},
     update_features_request::{FeatureUpdateKey, UpdateFeaturesRequest},
 };
@@ -85,10 +85,10 @@ async fn create_topic(client: &Client, topic: &str, partitions: i32) {
     );
 }
 
-async fn produce(producer: &crabka_client_producer::Producer, topic: &str, key: &str, val: &str) {
+async fn produce(producer: &krabka_client_producer::Producer, topic: &str, key: &str, val: &str) {
     drop(
         producer
-            .send(crabka_client_producer::ProducerRecord {
+            .send(krabka_client_producer::ProducerRecord {
                 topic: topic.into(),
                 partition: Some(0),
                 key: Some(bytes::Bytes::copy_from_slice(key.as_bytes())),
@@ -111,7 +111,7 @@ async fn produce(producer: &crabka_client_producer::Producer, topic: &str, key: 
 /// Both input tables are materialized **source** tables built with
 /// `builder.table`, as the FK join needs. The foreign-key extractor is the
 /// identity on `a`'s value.
-fn fk_join_topology(app_id: &str) -> crabka_client_streams::BuiltTopology {
+fn fk_join_topology(app_id: &str) -> krabka_client_streams::BuiltTopology {
     let b = StreamsBuilder::new();
     let ta = b.table::<String, String>("fk-a", "fk-sa");
     let tb = b.table::<String, String>("fk-b", "fk-sb");
@@ -192,8 +192,8 @@ async fn poll_until_latest(
             topic_id,
             0,
             next_offset,
-            crabka_units::millis(500),
-            crabka_units::mebibytes(1),
+            krabka_units::millis(500),
+            krabka_units::mebibytes(1),
         )
         .await
         .unwrap_or_default();
@@ -265,8 +265,8 @@ async fn read_all(admin: &Client, bootstrap: &str, topic_name: &str) -> Vec<(Str
             topic_id,
             0,
             next,
-            crabka_units::millis(500),
-            crabka_units::mebibytes(1),
+            krabka_units::millis(500),
+            krabka_units::mebibytes(1),
         )
         .await
         .unwrap_or_default();
@@ -313,7 +313,7 @@ async fn fk_join_resolves_and_restores_over_broker() {
     create_topic(&admin, "fk-b", 1).await;
     create_topic(&admin, "fk-out", 1).await;
 
-    let producer = crabka_client_producer::Producer::builder()
+    let producer = krabka_client_producer::Producer::builder()
         .bootstrap(&bootstrap)
         .build()
         .await

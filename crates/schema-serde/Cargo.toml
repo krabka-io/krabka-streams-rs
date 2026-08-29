@@ -1,16 +1,16 @@
 [package]
-name = "crabka-schema-serde"
+name = "krabka-schema-serde"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Confluent-compatible schema serdes (Avro/Protobuf/JSON) for Crabka clients"
+description = "Confluent-compatible schema serdes (Avro/Protobuf/JSON) for Krabka clients"
 repository = "https://github.com/robot-head/crabka"
 homepage = "https://github.com/robot-head/crabka"
-documentation = "https://docs.rs/crabka-schema-serde"
+documentation = "https://docs.rs/krabka-schema-serde"
 readme = "README.md"
-keywords = ["kafka", "schema", "avro", "protobuf", "crabka"]
+keywords = ["kafka", "schema", "avro", "protobuf", "krabka"]
 categories = ["encoding", "api-bindings"]
 
 [lints]
@@ -25,7 +25,7 @@ json = ["dep:schemars", "dep:jsonschema"]
 [dependencies]
 assert2 = { workspace = true }
 bytes = { workspace = true }
-crabka-units = { workspace = true }
+krabka-units = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

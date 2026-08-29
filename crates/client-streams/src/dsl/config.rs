@@ -3,7 +3,7 @@
 //!
 //! `Consumed` and `Produced` come from `crate::processor::serde`.
 
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 /// The serdes, and an optional repartition name, for `groupBy` and
 /// `groupByKey`.

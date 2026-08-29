@@ -1,6 +1,6 @@
-//! Kafka Streams-compatible client runtime for Crabka.
+//! Kafka Streams-compatible client runtime for Krabka.
 //!
-//! `crabka-client-streams` has three layers. You can use each layer on its own:
+//! `krabka-client-streams` has three layers. You can use each layer on its own:
 //!
 //! - [`StreamsBuilder`] builds JVM-compatible KStream/KTable topologies for
 //!   common application code: map/filter chains, aggregations, joins, windows,
@@ -21,7 +21,7 @@
 //! ```no_run
 //! use std::time::Duration;
 //!
-//! use crabka_client_streams::{NodeHandle, StreamsEvent, StreamsMembership, Topology};
+//! use krabka_client_streams::{NodeHandle, StreamsEvent, StreamsMembership, Topology};
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut topo = Topology::new();
@@ -57,7 +57,7 @@
 //! Define a typed topology, then test it with the broker-free [`TopologyTestDriver`]:
 //!
 //! ```
-//! use crabka_client_streams::{
+//! use krabka_client_streams::{
 //!     NodeHandle, Record, StringSerde, Topology, TopologyTestDriver, impl_processor,
 //! };
 //!
@@ -94,7 +94,7 @@
 //! **compile error**, not a `build()`-time failure:
 //!
 //! ```compile_fail
-//! use crabka_client_streams::{NodeHandle, Topology};
+//! use krabka_client_streams::{NodeHandle, Topology};
 //!
 //! let mut topo = Topology::new();
 //! // `src` produces Record<String, String>:
@@ -110,7 +110,7 @@
 //! inside `process` with [`ProcessorContext::get_state_store`].
 //!
 //! ```
-//! use crabka_client_streams::{
+//! use krabka_client_streams::{
 //!     I64Serde, NodeHandle, Record, StringSerde, Topology, TopologyTestDriver, impl_processor,
 //! };
 //!
@@ -222,7 +222,7 @@
 //! foreign key. The DSL creates and copartitions all three automatically.
 //!
 //! ```no_run
-//! use crabka_client_streams::{StreamsBuilder, StringSerde};
+//! use krabka_client_streams::{StreamsBuilder, StringSerde};
 //!
 //! let builder = StreamsBuilder::new();
 //! // `a`: primaryKey -> foreignKey ("A"); `b`: foreignKey -> value ("X").
@@ -388,7 +388,7 @@
 //! key, and the stream needs no repartition:
 //!
 //! ```
-//! use crabka_client_streams::{StreamsBuilder, StringSerde};
+//! use krabka_client_streams::{StreamsBuilder, StringSerde};
 //!
 //! let b = StreamsBuilder::new();
 //! let customers = b.global_table::<String, String>("customers", "customers-by-id");
@@ -413,8 +413,8 @@
 //!
 //! ```
 //! use apache_avro::AvroSchema;
-//! use crabka_client_streams::{DefaultSerde, SchemaSerde, StreamsBuilder};
-//! use crabka_schema_serde::{
+//! use krabka_client_streams::{DefaultSerde, SchemaSerde, StreamsBuilder};
+//! use krabka_schema_serde::{
 //!     RegistryClient,
 //!     cache::{CacheConfig, SchemaCache},
 //!     format::avro::AvroSerde,
@@ -491,8 +491,8 @@
 //! has passed:
 //!
 //! ```
-//! use crabka_client_streams::{BufferConfig, StreamsBuilder, Suppressed, TimeWindows};
-//! use crabka_units::prelude::*;
+//! use krabka_client_streams::{BufferConfig, StreamsBuilder, Suppressed, TimeWindows};
+//! use krabka_units::prelude::*;
 //!
 //! let b = StreamsBuilder::new();
 //! b.stream::<String, String>(["clicks"])
@@ -516,16 +516,16 @@
 //!
 //! ```
 //! use apache_avro::AvroSchema;
-//! use crabka_client_streams::{
+//! use krabka_client_streams::{
 //!     BufferConfig, DefaultSerde, SchemaSerde, StreamsBuilder, Suppressed, TimeWindows,
 //! };
-//! use crabka_schema_serde::{
+//! use krabka_schema_serde::{
 //!     RegistryClient,
 //!     cache::{CacheConfig, SchemaCache},
 //!     format::avro::AvroSerde,
 //!     set_default_registry,
 //! };
-//! use crabka_units::prelude::*;
+//! use krabka_units::prelude::*;
 //! use serde::{Deserialize, Serialize};
 //!
 //! #[derive(Clone, Serialize, Deserialize, AvroSchema)]
@@ -578,7 +578,7 @@
 //! ```
 //!
 //! ```
-//! use crabka_client_streams::{I64Serde, StreamsBuilder, StringSerde, TopologyTestDriver};
+//! use krabka_client_streams::{I64Serde, StreamsBuilder, StringSerde, TopologyTestDriver};
 //!
 //! // Build a word-count topology: group by key, count, forward to "out".
 //! let b = StreamsBuilder::new();
@@ -634,8 +634,8 @@
 //!
 //! ```
 //! use apache_avro::AvroSchema;
-//! use crabka_client_streams::{DefaultSerde, SchemaSerde, StreamsBuilder};
-//! use crabka_schema_serde::{
+//! use krabka_client_streams::{DefaultSerde, SchemaSerde, StreamsBuilder};
+//! use krabka_schema_serde::{
 //!     RegistryClient,
 //!     cache::{CacheConfig, SchemaCache},
 //!     format::avro::AvroSerde,
@@ -734,7 +734,7 @@
 //! use std::time::Duration;
 //!
 //! use async_trait::async_trait;
-//! use crabka_client_streams::{
+//! use krabka_client_streams::{
 //!     I64Serde, NodeHandle, Processor, ProcessorContext, PunctuationType, Punctuator, Record,
 //!     StringSerde, Topology, TopologyTestDriver,
 //! };
@@ -799,7 +799,7 @@
 //!
 //! ```no_run
 //! use async_trait::async_trait;
-//! use crabka_client_streams::{
+//! use krabka_client_streams::{
 //!     KafkaStreams, NodeHandle, Processor, ProcessorContext, Record, Topology,
 //! };
 //!
@@ -862,7 +862,7 @@
 //! running supervisor:
 //!
 //! ```no_run
-//! # use crabka_client_streams::{KafkaStreams, StringSerde, I64Serde};
+//! # use krabka_client_streams::{KafkaStreams, StringSerde, I64Serde};
 //! # async fn example(streams: KafkaStreams) -> Result<(), Box<dyn std::error::Error>> {
 //! let counts = streams
 //!     .key_value_store("counts", StringSerde, I64Serde)
@@ -915,7 +915,7 @@
 //! [`StreamThread`]: runtime
 //!
 //! ```no_run
-//! use crabka_client_streams::{KafkaStreams, NodeHandle, ProcessingGuarantee, Topology};
+//! use krabka_client_streams::{KafkaStreams, NodeHandle, ProcessingGuarantee, Topology};
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut topo = Topology::new();
 //! let src: NodeHandle<String, String> = topo.add_source("src", ["in"]);
@@ -941,7 +941,7 @@
 //! materializes a table into a versioned key-value store. The store records
 //! out-of-order records as historical versions and keeps the latest version
 //! intact. `get_as_of` gives point-in-time reads.
-#![doc(html_root_url = "https://docs.rs/crabka-client-streams/0.4.0")]
+#![doc(html_root_url = "https://docs.rs/krabka-client-streams/0.4.0")]
 
 pub mod barrier;
 pub mod columnar;
@@ -961,7 +961,6 @@ pub use barrier::{
     BARRIER_STATE_TOPIC, Barrier, BarrierAlignment, BarrierCut, BarrierListener, CutReader,
     CutStatus, decode_barrier_cut,
 };
-pub use crabka_client_core::ClientDnsTimeout;
 pub use dsl::{
     BranchedStream, BufferConfig, CogroupedKStream, GlobalKTable, Grouped, JoinWindows, Joined,
     KGroupedStream, KStream, KTable, Materialized, Repartitioned, SessionWindowedCogroupedStream,
@@ -971,6 +970,7 @@ pub use dsl::{
     TimeWindowedSerde, TimeWindows, VersionedConfig, Window, Windowed,
 };
 pub use error::StreamsClientError;
+pub use krabka_client_core::ClientDnsTimeout;
 pub use membership::{
     DEFAULT_STREAMS_JOIN_RETRY_BACKOFF, DEFAULT_STREAMS_LEAVE_HEARTBEAT_TIMEOUT,
     DEFAULT_STREAMS_REBALANCE_TIMEOUT, SchemaPrewarm, StreamsAssignment, StreamsEvent,

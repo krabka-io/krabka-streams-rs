@@ -13,11 +13,11 @@
 //! nested Avro record, built from structs, a `Vec`, an `Option`, and an enum. The
 //! pipeline registers and resolves each one against the schema registry.
 //!
-//! Run: `cargo run -p crabka-client-streams --example avro_pipeline`
+//! Run: `cargo run -p krabka-client-streams --example avro_pipeline`
 
 use apache_avro::AvroSchema;
-use crabka_client_streams::{DefaultSerde, Record, SchemaSerde, StreamsApp, impl_processor};
-use crabka_schema_serde::format::avro::AvroSerde;
+use krabka_client_streams::{DefaultSerde, Record, SchemaSerde, StreamsApp, impl_processor};
+use krabka_schema_serde::format::avro::AvroSerde;
 use serde::{Deserialize, Serialize};
 
 /// A customer order, the inbound Avro value. It holds a nested record, an array,

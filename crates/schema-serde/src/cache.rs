@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crabka_units::{fmt::Human as _, prelude::*};
+use krabka_units::{fmt::Human as _, prelude::*};
 
 use crate::{
     error::SchemaSerdeError,
@@ -510,7 +510,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use assert2::check;
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
         matchers::{body_json, method, path},

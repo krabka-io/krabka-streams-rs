@@ -11,7 +11,7 @@ topology. These fixtures gate byte-exact interop of the Rust encoder.
    `addStateStore`. Match the Rust builder calls in the corresponding test.
 2. Configure `group.protocol=streams` (KIP-1071) and point it at any broker.
 3. Capture the first `StreamsGroupHeartbeatRequest`, which is apiKey 88. The
-   easiest method is to point the app at the Crabka broker and enable
+   easiest method is to point the app at the Krabka broker and enable
    request-byte logging. You can also attach a debugger to
    `StreamsGroupHeartbeatRequestManager.buildRequestData()` and dump the
    `Topology`.
@@ -23,7 +23,7 @@ Until someone captures a fixture from a real JVM run, the corresponding test
 asserts against the hand-derived expectation from the documented JVM 4.x rules.
 Each such test is also written so that a JVM-captured `.bin` fixture can replace
 the expectation without a change to the test shape. The real JVM byte-capture
-and the mixed JVM plus Crabka group test are the next interop-validation
+and the mixed JVM plus Krabka group test are the next interop-validation
 milestone.
 
 ## `dsl/` — empirically captured DSL fixtures (KIP-1071, JVM 4.1.0)

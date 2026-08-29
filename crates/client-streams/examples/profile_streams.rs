@@ -13,13 +13,13 @@
 //!
 //! ```text
 //! CARGO_PROFILE_RELEASE_DEBUG=true cargo run --release \
-//!   -p crabka-client-streams --example profile_streams
+//!   -p krabka-client-streams --example profile_streams
 //! ```
 //!
 //! Env: `STREAMS_N` (records, default 2M), `STREAMS_KEYS` (default 1000),
 //! `STREAMS_VALUE_BYTES` (default 100).
 
-use crabka_client_streams::{Consumed, StringSerde, TopologyTestDriver, dsl::StreamsBuilder};
+use krabka_client_streams::{Consumed, StringSerde, TopologyTestDriver, dsl::StreamsBuilder};
 
 fn env<T: std::str::FromStr>(k: &str, d: T) -> T {
     std::env::var(k)

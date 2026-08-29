@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 use tokio::sync::Mutex as TokioMutex;
 
 use crate::{

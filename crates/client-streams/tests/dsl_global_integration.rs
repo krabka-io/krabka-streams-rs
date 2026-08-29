@@ -10,11 +10,11 @@
 
 use std::time::Duration;
 
-use crabka_broker::{Broker, BrokerConfig, BrokerHandle};
-use crabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
-use crabka_client_producer::{Producer, ProducerRecord};
-use crabka_client_streams::{GlobalKTable, KafkaStreams, StreamsBuilder};
-use crabka_protocol::owned::{
+use krabka_broker::{Broker, BrokerConfig, BrokerHandle};
+use krabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
+use krabka_client_producer::{Producer, ProducerRecord};
+use krabka_client_streams::{GlobalKTable, KafkaStreams, StreamsBuilder};
+use krabka_protocol::owned::{
     create_topics_request::{CreatableTopic, CreateTopicsRequest},
     update_features_request::{FeatureUpdateKey, UpdateFeaturesRequest},
 };
@@ -75,7 +75,7 @@ async fn create_topic(client: &Client, topic: &str, partitions: i32) {
 ///
 /// `global`, which has 2 partitions, feeds the fully-replicated `global-store`.
 /// `in` → `join_global` → `out`, where the lookup key is the stream value.
-fn global_join_topology(app_id: &str) -> crabka_client_streams::BuiltTopology {
+fn global_join_topology(app_id: &str) -> krabka_client_streams::BuiltTopology {
     let b = StreamsBuilder::new();
     let g: GlobalKTable<String, String> =
         b.global_table::<String, String>("global", "global-store");
@@ -141,8 +141,8 @@ async fn collect_output(
             topic_id,
             0,
             next_offset,
-            crabka_units::millis(500),
-            crabka_units::mebibytes(1),
+            krabka_units::millis(500),
+            krabka_units::mebibytes(1),
         )
         .await
         .unwrap_or_default();

@@ -17,8 +17,8 @@ integration suites boot a broker from
 
 | Crate | What it is |
 | --- | --- |
-| `crabka-client-streams` | The streams client: DSL, topology, state stores, interactive queries |
-| `crabka-schema-serde` | Avro, JSON Schema and Protobuf serialisation against a schema registry |
+| `krabka-client-streams` | The streams client: DSL, topology, state stores, interactive queries |
+| `krabka-schema-serde` | Avro, JSON Schema and Protobuf serialisation against a schema registry |
 
 ## Build
 
@@ -44,5 +44,5 @@ nothing under the other.
 ## Publishing
 
 These crates are not published from here. `robot-head/crabka` still owns every
-`crabka-*` name on crates.io; this repository is where the streams client is
+`krabka-*` name on crates.io; this repository is where the streams client is
 developed.

@@ -10,10 +10,10 @@
 //! and no repartition, which keeps the test robust.
 mod support;
 
-use crabka_client_streams::{
+use krabka_client_streams::{
     Consumed, Grouped, I64Serde, Materialized, Produced, StringSerde, dsl::StreamsBuilder,
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 #[test]
 fn dsl_count_executes() {
@@ -24,7 +24,7 @@ fn dsl_count_executes() {
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for v in ["a", "a", "b"] {
         d.pipe_input(
             "in",
@@ -70,7 +70,7 @@ fn dsl_count_with_repartition_executes() {
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // keys are irrelevant; the new key is the value
     for v in ["x", "x", "y"] {
         d.pipe_input(
@@ -110,7 +110,7 @@ fn dsl_reduce_executes() {
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for (k, v) in [("a", "1"), ("a", "2"), ("b", "9")] {
         d.pipe_input(
             "in",
@@ -160,7 +160,7 @@ fn dsl_branch_executes() {
     drop(src);
     drop(split);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for v in ["a", "b", "a"] {
         d.pipe_input(
             "in",
@@ -196,7 +196,7 @@ fn dsl_branch_executes() {
 /// The test driver loops the repartition topic back automatically.
 #[test]
 fn dsl_repartition_executes() {
-    use crabka_client_streams::Repartitioned;
+    use krabka_client_streams::Repartitioned;
     let b = StreamsBuilder::new();
     b.stream::<String, String>(["in"])
         .repartition(Repartitioned::with(StringSerde, StringSerde))
@@ -204,7 +204,7 @@ fn dsl_repartition_executes() {
         .to("out");
     // build must succeed (no missing thunk panic)
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for v in ["hello", "world"] {
         d.pipe_input(
             "in",
@@ -242,7 +242,7 @@ fn dsl_map_executes() {
         .map(|k: &String, v: &String| (i64::try_from(k.len()).unwrap(), v.to_uppercase()))
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -272,7 +272,7 @@ fn dsl_select_key_executes() {
         .select_key(|_k: &String, v: &String| v.clone())
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -303,7 +303,7 @@ fn dsl_filter_not_executes() {
         .filter_not(|_k: &String, v: &String| v == "drop")
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for v in ["keep", "drop", "also-keep"] {
         d.pipe_input(
             "in",
@@ -344,7 +344,7 @@ fn dsl_flat_map_executes() {
         })
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -382,7 +382,7 @@ fn dsl_flat_map_values_executes() {
         .flat_map_values(|v: &String| v.chars().map(|c| c.to_string()).collect::<Vec<_>>())
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -425,7 +425,7 @@ fn dsl_peek_executes() {
         })
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for (k, v) in [("k1", "v1"), ("k2", "v2")] {
         d.pipe_input(
             "in",
@@ -477,7 +477,7 @@ fn dsl_foreach_executes() {
             collected_clone.lock().unwrap().push((k.clone(), v.clone()));
         });
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for (k, v) in [("a", "1"), ("b", "2"), ("a", "3")] {
         d.pipe_input(
             "in",
@@ -518,7 +518,7 @@ fn dsl_aggregate_executes() {
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // "a" gets "hi" (len=2) then "world" (len=5) → running sums 2, 7
     // "b" gets "x" (len=1) → running sum 1
     for (k, v) in [("a", "hi"), ("b", "x"), ("a", "world")] {
@@ -570,7 +570,7 @@ fn dsl_ktable_filter_executes() {
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, I64Serde),
@@ -620,7 +620,7 @@ fn dsl_ktable_map_values_view_executes() {
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, I64Serde),
@@ -670,7 +670,7 @@ fn dsl_count_no_logging_omits_changelog() {
         "expected no changelog topics but found some"
     );
     // The store still works at runtime.
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for v in ["a", "a", "b"] {
         d.pipe_input(
             "in",
@@ -705,7 +705,7 @@ fn dsl_ktable_filter_tombstone_propagates_downstream() {
             Materialized::with(StringSerde, StringSerde).as_store("view"),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // 1. "k" = "keep" → present in the downstream materialized "view" store.
     d.pipe_input(
@@ -757,7 +757,7 @@ fn dsl_table_map_values_executes() {
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, I64Serde),
@@ -785,14 +785,14 @@ fn dsl_table_map_values_executes() {
 /// key.
 #[test]
 fn dsl_to_table_executes() {
-    use crabka_client_streams::{Consumed, Produced, StringSerde, dsl::StreamsBuilder};
+    use krabka_client_streams::{Consumed, Produced, StringSerde, dsl::StreamsBuilder};
     let b = StreamsBuilder::new();
     b.stream::<String, String>(["in"])
         .to_table("store")
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -839,7 +839,7 @@ fn dsl_to_table_unnamed_store_executes() {
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -884,7 +884,7 @@ fn dsl_stream_table_inner_join_executes() {
         .to("out");
     drop(table);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // 1. Populate the table store via the `right` source: ("k", "T").
     d.pipe_input(
@@ -934,7 +934,7 @@ fn dsl_stream_table_left_join_executes() {
         .to("out");
     drop(table);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // Populate the table: ("k", "T").
     d.pipe_input(
@@ -977,7 +977,7 @@ fn dsl_stream_table_left_join_executes() {
 /// the right table, and the join emits "AB".
 #[test]
 fn dsl_ktable_ktable_inner_join_executes() {
-    use crabka_client_streams::{Consumed, Produced, StringSerde, dsl::StreamsBuilder};
+    use krabka_client_streams::{Consumed, Produced, StringSerde, dsl::StreamsBuilder};
     let b = StreamsBuilder::new();
     let ta = b.table::<String, String>("a", "sa");
     let tb = b.table::<String, String>("b", "sb");
@@ -987,7 +987,7 @@ fn dsl_ktable_ktable_inner_join_executes() {
     drop(ta);
     drop(tb);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // Left side present, right side absent → inner join emits nothing.
     d.pipe_input(
         "a",
@@ -1019,7 +1019,7 @@ fn dsl_ktable_ktable_inner_join_executes() {
 /// the output holds the left value with an empty right side.
 #[test]
 fn dsl_ktable_ktable_left_join_executes() {
-    use crabka_client_streams::{Consumed, Produced, StringSerde, dsl::StreamsBuilder};
+    use krabka_client_streams::{Consumed, Produced, StringSerde, dsl::StreamsBuilder};
     let b = StreamsBuilder::new();
     let ta = b.table::<String, String>("a", "sa");
     let tb = b.table::<String, String>("b", "sb");
@@ -1031,7 +1031,7 @@ fn dsl_ktable_ktable_left_join_executes() {
     drop(ta);
     drop(tb);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // Only the left side present → left join emits the left value (right empty).
     d.pipe_input(
         "a",
@@ -1051,7 +1051,7 @@ fn dsl_ktable_ktable_left_join_executes() {
 /// empty left side.
 #[test]
 fn dsl_ktable_ktable_outer_join_executes() {
-    use crabka_client_streams::{Consumed, Produced, StringSerde, dsl::StreamsBuilder};
+    use krabka_client_streams::{Consumed, Produced, StringSerde, dsl::StreamsBuilder};
     let b = StreamsBuilder::new();
     let ta = b.table::<String, String>("a", "sa");
     let tb = b.table::<String, String>("b", "sb");
@@ -1067,7 +1067,7 @@ fn dsl_ktable_ktable_outer_join_executes() {
     drop(ta);
     drop(tb);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // Only the right side present → outer join emits the right value (left empty).
     d.pipe_input(
         "b",
@@ -1110,7 +1110,7 @@ fn dsl_to_table_no_logging_omits_changelog() {
     );
 
     // The store still functions at runtime.
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -1146,7 +1146,7 @@ fn dsl_to_table_no_logging_omits_changelog() {
 /// count restarts.
 #[test]
 fn dsl_windowed_count_tumbling_executes() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, I64Serde, Produced, StringSerde, TimeWindowedSerde, TimeWindows, Window,
         Windowed, dsl::StreamsBuilder,
     };
@@ -1161,7 +1161,7 @@ fn dsl_windowed_count_tumbling_executes() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -1221,7 +1221,7 @@ fn dsl_windowed_count_tumbling_executes() {
 /// It emits one count per overlapping window.
 #[test]
 fn dsl_windowed_count_hopping_executes() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, I64Serde, Produced, StringSerde, TimeWindowedSerde, TimeWindows, Window,
         Windowed, dsl::StreamsBuilder,
     };
@@ -1236,7 +1236,7 @@ fn dsl_windowed_count_hopping_executes() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -1273,7 +1273,7 @@ fn dsl_windowed_count_hopping_executes() {
 /// fold into it.
 #[test]
 fn dsl_windowed_reduce_executes() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, Produced, StringSerde, TimeWindowedSerde, TimeWindows, Window, Windowed,
         dsl::StreamsBuilder,
     };
@@ -1288,7 +1288,7 @@ fn dsl_windowed_reduce_executes() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), StringSerde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -1347,7 +1347,7 @@ fn dsl_windowed_reduce_executes() {
 /// sums the integer values per window.
 #[test]
 fn dsl_windowed_aggregate_executes() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, I64Serde, Produced, StringSerde, TimeWindowedSerde, TimeWindows, Window,
         Windowed, dsl::StreamsBuilder,
     };
@@ -1362,7 +1362,7 @@ fn dsl_windowed_aggregate_executes() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, I64Serde),
@@ -1428,7 +1428,7 @@ fn dsl_windowed_aggregate_executes() {
 /// symmetrically.
 #[test]
 fn dsl_stream_stream_inner_join_executes() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, JoinWindows, Produced, StreamJoined, StringSerde, dsl::StreamsBuilder,
     };
     let b = StreamsBuilder::new();
@@ -1444,7 +1444,7 @@ fn dsl_stream_stream_inner_join_executes() {
     drop(left);
     drop(right);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // Left record ("k", "a") at t=5: no matching right record yet → no output.
     d.pipe_input(
@@ -1490,7 +1490,7 @@ fn dsl_stream_stream_inner_join_executes() {
 /// `before` and `after`, so this holds for whichever side drives the record.
 #[test]
 fn dsl_stream_stream_join_swap_asymmetric() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, JoinWindows, Produced, StreamJoined, StringSerde, dsl::StreamsBuilder,
     };
     let b = StreamsBuilder::new();
@@ -1508,7 +1508,7 @@ fn dsl_stream_stream_join_swap_asymmetric() {
     drop(left);
     drop(right);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // Key "k1": A first at t=0, then B at t=15. When B@15 drives, the OTHER (B)
     // processor fetches A over the SWAPPED window [15-after, 15+before] =
@@ -1569,7 +1569,7 @@ fn dsl_stream_stream_join_swap_asymmetric() {
 /// give TWO joins.
 #[test]
 fn dsl_stream_stream_join_duplicates() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, JoinWindows, Produced, StreamJoined, StringSerde, dsl::StreamsBuilder,
     };
     let b = StreamsBuilder::new();
@@ -1585,7 +1585,7 @@ fn dsl_stream_stream_join_duplicates() {
     drop(left);
     drop(right);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // Two left records for "k" at t=5 (retainDuplicates store keeps both).
     d.pipe_input(
@@ -1639,7 +1639,7 @@ fn dsl_stream_stream_join_duplicates() {
 /// as a null.
 #[test]
 fn dsl_stream_stream_left_join_executes() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, JoinWindows, Produced, StreamJoined, StringSerde, dsl::StreamsBuilder,
     };
     let b = StreamsBuilder::new();
@@ -1655,7 +1655,7 @@ fn dsl_stream_stream_left_join_executes() {
     drop(left);
     drop(right);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // Matched case: A("k1","a")@5 then B("k1","b")@8 ∈ [5-10,5+10] → "ab" once.
     d.pipe_input(
@@ -1725,7 +1725,7 @@ fn dsl_stream_stream_left_join_executes() {
 /// close.
 #[test]
 fn dsl_stream_stream_outer_join_executes() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, JoinWindows, Produced, StreamJoined, StringSerde, dsl::StreamsBuilder,
     };
     let b = StreamsBuilder::new();
@@ -1747,7 +1747,7 @@ fn dsl_stream_stream_outer_join_executes() {
     drop(left);
     drop(right);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // Unmatched right: B("k","b")@5 with no A → buffered (window 5+before(10) open).
     d.pipe_input(
@@ -1786,7 +1786,7 @@ fn dsl_stream_stream_outer_join_executes() {
 /// test drives the JVM session-merge in the DSL execution path.
 #[test]
 fn dsl_session_count_merges_within_gap() {
-    use crabka_client_streams::{SessionWindowedSerde, SessionWindows, Window, Windowed};
+    use krabka_client_streams::{SessionWindowedSerde, SessionWindows, Window, Windowed};
     let b = StreamsBuilder::new();
     b.stream::<String, String>(["in"])
         .group_by_key()
@@ -1798,7 +1798,7 @@ fn dsl_session_count_merges_within_gap() {
             Produced::with(SessionWindowedSerde::new(StringSerde), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for ts in [0i64, 30, 200] {
         d.pipe_input(
             "in",
@@ -1853,7 +1853,7 @@ fn dsl_session_count_merges_within_gap() {
 /// sessions, with no merge and no tombstone.
 #[test]
 fn dsl_session_count_separate_beyond_gap() {
-    use crabka_client_streams::{SessionWindowedSerde, SessionWindows, Window, Windowed};
+    use krabka_client_streams::{SessionWindowedSerde, SessionWindows, Window, Windowed};
     let b = StreamsBuilder::new();
     b.stream::<String, String>(["in"])
         .group_by_key()
@@ -1865,7 +1865,7 @@ fn dsl_session_count_separate_beyond_gap() {
             Produced::with(SessionWindowedSerde::new(StringSerde), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for ts in [0i64, 500] {
         d.pipe_input(
             "in",
@@ -1907,7 +1907,7 @@ fn dsl_session_count_separate_beyond_gap() {
 /// concatenation.
 #[test]
 fn dsl_session_reduce_executes() {
-    use crabka_client_streams::{SessionWindowedSerde, SessionWindows, Window, Windowed};
+    use krabka_client_streams::{SessionWindowedSerde, SessionWindows, Window, Windowed};
     let b = StreamsBuilder::new();
     b.stream::<String, String>(["in"])
         .group_by_key()
@@ -1922,7 +1922,7 @@ fn dsl_session_reduce_executes() {
             Produced::with(SessionWindowedSerde::new(StringSerde), StringSerde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for (v, ts) in [("x", 0i64), ("y", 30)] {
         d.pipe_input(
             "in",
@@ -1964,7 +1964,7 @@ fn dsl_session_reduce_executes() {
 /// path.
 #[test]
 fn dsl_session_aggregate_executes() {
-    use crabka_client_streams::{SessionWindowedSerde, SessionWindows, Window, Windowed};
+    use krabka_client_streams::{SessionWindowedSerde, SessionWindows, Window, Windowed};
     let b = StreamsBuilder::new();
     b.stream::<String, String>(["in"])
         .group_by_key()
@@ -1981,7 +1981,7 @@ fn dsl_session_aggregate_executes() {
             Produced::with(SessionWindowedSerde::new(StringSerde), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for ts in [0i64, 30] {
         d.pipe_input(
             "in",
@@ -2022,7 +2022,7 @@ fn dsl_session_aggregate_executes() {
 /// 60000.
 #[test]
 fn dsl_suppress_until_window_closes_emits_final_only() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         BufferConfig, I64Serde, Suppressed, TimeWindowedSerde, TimeWindows, Window, Windowed,
     };
     let b = StreamsBuilder::new();
@@ -2040,7 +2040,7 @@ fn dsl_suppress_until_window_closes_emits_final_only() {
             ),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // Two records in window [0,60000): count -> 2. No output yet (buffered).
     for ts in [1_000i64, 3_000] {
         d.pipe_input(
@@ -2088,7 +2088,7 @@ fn dsl_suppress_until_window_closes_emits_final_only() {
 /// eviction path.
 #[test]
 fn dsl_suppress_closes_multiple_windows_in_order() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         BufferConfig, I64Serde, Suppressed, TimeWindowedSerde, TimeWindows, Window, Windowed,
     };
     let b = StreamsBuilder::new();
@@ -2106,7 +2106,7 @@ fn dsl_suppress_closes_multiple_windows_in_order() {
             ),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     let out = Produced::with(
         TimeWindowedSerde::new(StringSerde, millis(60_000)),
         I64Serde,
@@ -2173,7 +2173,7 @@ fn dsl_suppress_closes_multiple_windows_in_order() {
 #[test]
 #[should_panic(expected = "max capacity")]
 fn dsl_suppress_max_records_shuts_down_when_full() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         BufferConfig, I64Serde, Suppressed, TimeWindowedSerde, TimeWindows,
     };
     let b = StreamsBuilder::new();
@@ -2193,7 +2193,7 @@ fn dsl_suppress_max_records_shuts_down_when_full() {
             ),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // Three distinct keys in window [0,60000) (ts < 60000 → none close) → the third
     // brings the buffer to 3 > cap 2 → panic.
     for (k, ts) in [("a", 1_000i64), ("b", 2_000), ("c", 3_000)] {
@@ -2217,7 +2217,7 @@ fn dsl_suppress_max_records_shuts_down_when_full() {
 #[test]
 #[should_panic(expected = "bytes")]
 fn dsl_suppress_max_bytes_shuts_down_when_full() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         BufferConfig, I64Serde, Suppressed, TimeWindowedSerde, TimeWindows,
     };
     let b = StreamsBuilder::new();
@@ -2237,7 +2237,7 @@ fn dsl_suppress_max_bytes_shuts_down_when_full() {
             ),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // Two distinct keys in the open window [0,60000): the second pushes the buffer
     // to 34 bytes > 20 → shutdown.
     for (k, ts) in [("a", 1_000i64), ("b", 2_000)] {
@@ -2258,7 +2258,7 @@ fn dsl_suppress_max_bytes_shuts_down_when_full() {
 /// evicts the first early.
 #[test]
 fn dsl_suppress_max_bytes_emit_early() {
-    use crabka_client_streams::{BufferConfig, I64Serde, Materialized, Suppressed};
+    use krabka_client_streams::{BufferConfig, I64Serde, Materialized, Suppressed};
     let b = StreamsBuilder::new();
     b.stream::<String, String>(["in"])
         .group_by_key()
@@ -2270,7 +2270,7 @@ fn dsl_suppress_max_bytes_emit_early() {
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // "a"@1 buffers (9 ≤ 10), nothing emits.
     d.pipe_input(
         "in",
@@ -2302,7 +2302,7 @@ fn dsl_suppress_max_bytes_emit_early() {
 /// table.
 #[test]
 fn dsl_suppress_until_time_limit_rate_limits() {
-    use crabka_client_streams::{BufferConfig, I64Serde, Materialized, Suppressed};
+    use krabka_client_streams::{BufferConfig, I64Serde, Materialized, Suppressed};
     let b = StreamsBuilder::new();
     b.stream::<String, String>(["in"])
         .group_by_key()
@@ -2314,7 +2314,7 @@ fn dsl_suppress_until_time_limit_rate_limits() {
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // "a"@10 → count 1, buffered (buffer_time 10, would emit at 10+50=60). No output.
     d.pipe_input(
         "in",
@@ -2346,7 +2346,7 @@ fn dsl_suppress_until_time_limit_rate_limits() {
 /// first key emits when the second key lands.
 #[test]
 fn dsl_suppress_emit_early_when_full_evicts_oldest() {
-    use crabka_client_streams::{BufferConfig, I64Serde, Materialized, Suppressed};
+    use krabka_client_streams::{BufferConfig, I64Serde, Materialized, Suppressed};
     let b = StreamsBuilder::new();
     b.stream::<String, String>(["in"])
         .group_by_key()
@@ -2358,7 +2358,7 @@ fn dsl_suppress_emit_early_when_full_evicts_oldest() {
         .to_stream()
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -2386,7 +2386,7 @@ fn dsl_suppress_emit_early_when_full_evicts_oldest() {
 #[test]
 #[should_panic(expected = "strict")]
 fn dsl_until_window_closes_rejects_eager_buffer() {
-    use crabka_client_streams::{BufferConfig, Suppressed, Windowed};
+    use krabka_client_streams::{BufferConfig, Suppressed, Windowed};
     let _ = Suppressed::<Windowed<String>>::until_window_closes(BufferConfig::max_records(2));
 }
 
@@ -2405,7 +2405,7 @@ fn dsl_until_window_closes_rejects_eager_buffer() {
 /// "G1" → "v1G1".
 #[test]
 fn dsl_global_join_inner_hit_executes() {
-    use crabka_client_streams::GlobalKTable;
+    use krabka_client_streams::GlobalKTable;
     let b = StreamsBuilder::new();
     let g: GlobalKTable<String, String> =
         b.global_table::<String, String>("global", "global-store");
@@ -2418,7 +2418,7 @@ fn dsl_global_join_inner_hit_executes() {
         .to("out");
     drop(g);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // Seed the global store, then drive a record whose value maps to that key.
     d.pipe_global("global-store", "v1".to_string(), "G1".to_string());
     d.pipe_input(
@@ -2441,7 +2441,7 @@ fn dsl_global_join_inner_hit_executes() {
 /// Inner join miss: a stream value with no matching global key is dropped.
 #[test]
 fn dsl_global_join_inner_miss_drops() {
-    use crabka_client_streams::GlobalKTable;
+    use krabka_client_streams::GlobalKTable;
     let b = StreamsBuilder::new();
     let g: GlobalKTable<String, String> =
         b.global_table::<String, String>("global", "global-store");
@@ -2454,7 +2454,7 @@ fn dsl_global_join_inner_miss_drops() {
         .to("out");
     drop(g);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_global("global-store", "v1".to_string(), "G1".to_string());
     // value "absent" has no matching global key → dropped.
     d.pipe_input(
@@ -2474,7 +2474,7 @@ fn dsl_global_join_inner_miss_drops() {
 /// `None`.
 #[test]
 fn dsl_global_left_join_miss_emits_none() {
-    use crabka_client_streams::GlobalKTable;
+    use krabka_client_streams::GlobalKTable;
     let b = StreamsBuilder::new();
     let g: GlobalKTable<String, String> =
         b.global_table::<String, String>("global", "global-store");
@@ -2490,7 +2490,7 @@ fn dsl_global_left_join_miss_emits_none() {
         .to("out");
     drop(g);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // No global seed for "v2" → miss → "v2-none".
     d.pipe_input(
         "in",
@@ -2509,7 +2509,7 @@ fn dsl_global_left_join_miss_emits_none() {
 /// the test calls `pipe_global` again with a new value for the same key.
 #[test]
 fn dsl_global_join_sees_midstream_update() {
-    use crabka_client_streams::GlobalKTable;
+    use krabka_client_streams::GlobalKTable;
     let b = StreamsBuilder::new();
     let g: GlobalKTable<String, String> =
         b.global_table::<String, String>("global", "global-store");
@@ -2522,7 +2522,7 @@ fn dsl_global_join_sees_midstream_update() {
         .to("out");
     drop(g);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // First value, first record → "v1G1".
     d.pipe_global("global-store", "v1".to_string(), "G1".to_string());
     d.pipe_input(
@@ -2557,7 +2557,7 @@ fn dsl_global_join_sees_midstream_update() {
 /// stream key.
 #[test]
 fn dsl_global_join_key_mapper_derives_compound_key() {
-    use crabka_client_streams::GlobalKTable;
+    use krabka_client_streams::GlobalKTable;
     let b = StreamsBuilder::new();
     let g: GlobalKTable<String, String> =
         b.global_table::<String, String>("global", "global-store");
@@ -2570,7 +2570,7 @@ fn dsl_global_join_key_mapper_derives_compound_key() {
         .to("out");
     drop(g);
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_global("global-store", "k1:v1".to_string(), "G".to_string());
     d.pipe_input(
         "in",
@@ -2600,7 +2600,7 @@ fn dsl_global_join_key_mapper_derives_compound_key() {
 /// 2 for "a".
 #[test]
 fn dsl_process_stateful_counter_executes() {
-    use crabka_client_streams::{Processor, ProcessorContext, Record};
+    use krabka_client_streams::{Processor, ProcessorContext, Record};
     struct Counter;
     #[async_trait::async_trait]
     impl Processor<String, String, String, i64> for Counter {
@@ -2624,7 +2624,7 @@ fn dsl_process_stateful_counter_executes() {
         .process(|| Counter, ["counts"])
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for v in ["a", "a", "b"] {
         d.pipe_input(
             "in",
@@ -2664,7 +2664,7 @@ fn dsl_process_stateful_counter_executes() {
 /// re-keys the records, so the count repartitions before it aggregates.
 #[test]
 fn dsl_process_is_key_changing_forces_repartition() {
-    use crabka_client_streams::{Processor, ProcessorContext, Record};
+    use krabka_client_streams::{Processor, ProcessorContext, Record};
     struct Fwd;
     #[async_trait::async_trait]
     impl Processor<String, String, String, String> for Fwd {
@@ -2714,7 +2714,7 @@ fn dsl_process_is_key_changing_forces_repartition() {
 /// the processor does not read it.
 #[test]
 fn dsl_process_values_preserves_key_executes() {
-    use crabka_client_streams::{FixedKeyProcessor, FixedKeyProcessorContext, FixedKeyRecord};
+    use krabka_client_streams::{FixedKeyProcessor, FixedKeyProcessorContext, FixedKeyRecord};
     struct Upper;
     #[async_trait::async_trait]
     impl FixedKeyProcessor<String, String, String> for Upper {
@@ -2734,7 +2734,7 @@ fn dsl_process_values_preserves_key_executes() {
         .process_values(|| Upper, ["store"])
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     d.pipe_input(
         "in",
         Consumed::with(StringSerde, StringSerde),
@@ -2763,7 +2763,7 @@ fn dsl_process_values_preserves_key_executes() {
 /// (`dsl_process_is_key_changing_forces_repartition`), which DOES repartition.
 #[test]
 fn dsl_process_values_is_not_key_changing_no_repartition() {
-    use crabka_client_streams::{FixedKeyProcessor, FixedKeyProcessorContext, FixedKeyRecord};
+    use krabka_client_streams::{FixedKeyProcessor, FixedKeyProcessorContext, FixedKeyRecord};
     struct Upper;
     #[async_trait::async_trait]
     impl FixedKeyProcessor<String, String, String> for Upper {
@@ -2810,7 +2810,7 @@ fn dsl_process_values_is_not_key_changing_no_repartition() {
 /// which give `("k","a#1")` and `("k","b#2")`.
 #[test]
 fn dsl_process_values_reads_store_and_record_context() {
-    use crabka_client_streams::{FixedKeyProcessor, FixedKeyProcessorContext, FixedKeyRecord};
+    use krabka_client_streams::{FixedKeyProcessor, FixedKeyProcessorContext, FixedKeyRecord};
     struct Tagger;
     #[async_trait::async_trait]
     impl FixedKeyProcessor<String, String, String> for Tagger {
@@ -2837,7 +2837,7 @@ fn dsl_process_values_reads_store_and_record_context() {
         .process_values(|| Tagger, ["seen"])
         .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for v in ["a", "b"] {
         d.pipe_input(
             "in",
@@ -2864,7 +2864,7 @@ fn dsl_process_values_reads_store_and_record_context() {
 #[test]
 #[should_panic(expected = "was not added via add_state_store")]
 fn dsl_process_unknown_store_panics() {
-    use crabka_client_streams::{Processor, ProcessorContext, Record};
+    use krabka_client_streams::{Processor, ProcessorContext, Record};
     struct Fwd;
     #[async_trait::async_trait]
     impl Processor<String, String, String, String> for Fwd {
@@ -2886,7 +2886,7 @@ fn dsl_process_unknown_store_panics() {
 #[test]
 #[should_panic(expected = "was not added via add_state_store")]
 fn dsl_process_values_unknown_store_panics() {
-    use crabka_client_streams::{FixedKeyProcessor, FixedKeyProcessorContext, FixedKeyRecord};
+    use krabka_client_streams::{FixedKeyProcessor, FixedKeyProcessorContext, FixedKeyRecord};
     struct FixedFwd;
     #[async_trait::async_trait]
     impl FixedKeyProcessor<String, String, String> for FixedFwd {
@@ -2913,7 +2913,7 @@ fn dsl_process_values_unknown_store_panics() {
 /// exact JVM `KStreamSlidingWindowAggregate` behavior.
 #[test]
 fn sliding_window_count_matches_jvm_behavior() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, I64Serde, Produced, SlidingWindows, StringSerde, TimeWindowedSerde,
         dsl::StreamsBuilder,
     };
@@ -2939,7 +2939,7 @@ fn sliding_window_count_matches_jvm_behavior() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for (k, ts) in inputs {
         d.pipe_input(
             "in",
@@ -2989,7 +2989,7 @@ struct EmitFinalRow {
 /// stream-time moves PAST its end.
 #[test]
 fn emit_final_time_window_matches_jvm_behavior() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, I64Serde, Produced, StringSerde, TimeWindowedSerde, TimeWindows,
         dsl::{EmitStrategy, StreamsBuilder},
     };
@@ -3006,7 +3006,7 @@ fn emit_final_time_window_matches_jvm_behavior() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for (k, ts) in inputs {
         d.pipe_input(
             "in",
@@ -3038,7 +3038,7 @@ fn emit_final_time_window_matches_jvm_behavior() {
 /// Emit-final SLIDING-window count must match `testdata/emit_final/sliding.json`.
 #[test]
 fn emit_final_sliding_window_matches_jvm_behavior() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, I64Serde, Produced, SlidingWindows, StringSerde, TimeWindowedSerde,
         dsl::{EmitStrategy, StreamsBuilder},
     };
@@ -3055,7 +3055,7 @@ fn emit_final_sliding_window_matches_jvm_behavior() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for (k, ts) in inputs {
         d.pipe_input(
             "in",
@@ -3094,7 +3094,7 @@ fn emit_final_sliding_window_matches_jvm_behavior() {
 /// closes both. The JVM emits NO zero-width `[0,0]` at stream-time 0.
 #[test]
 fn emit_final_session_window_matches_jvm_behavior() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, I64Serde, Produced, SessionWindowedSerde, SessionWindows, StringSerde,
         dsl::{EmitStrategy, StreamsBuilder},
     };
@@ -3111,7 +3111,7 @@ fn emit_final_session_window_matches_jvm_behavior() {
             Produced::with(SessionWindowedSerde::new(StringSerde), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for (k, ts) in inputs {
         d.pipe_input(
             "in",
@@ -3145,7 +3145,7 @@ fn emit_final_session_window_matches_jvm_behavior() {
 
 #[test]
 fn sliding_window_count_builds() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         I64Serde, Materialized, Produced, SlidingWindows, StringSerde, TimeWindowedSerde,
         dsl::StreamsBuilder,
     };
@@ -3172,7 +3172,7 @@ fn sliding_window_count_builds() {
 /// "v", "v|v", "v|v|v", … matching the JVM `(a, v) -> a + "|" + v` reducer.
 #[test]
 fn sliding_window_reduce_matches_jvm_behavior() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, Produced, SlidingWindows, StringSerde, TimeWindowedSerde, dsl::StreamsBuilder,
     };
     #[derive(serde::Deserialize, PartialEq, Debug)]
@@ -3197,7 +3197,7 @@ fn sliding_window_reduce_matches_jvm_behavior() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), StringSerde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for (k, ts) in inputs {
         d.pipe_input(
             "in",
@@ -3234,7 +3234,7 @@ fn sliding_window_reduce_matches_jvm_behavior() {
 /// left-window emission is correct for two in-order records.
 #[test]
 fn sliding_window_aggregate_executes() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, I64Serde, Produced, SlidingWindows, StringSerde, TimeWindowedSerde, Window,
         Windowed, dsl::StreamsBuilder,
     };
@@ -3249,7 +3249,7 @@ fn sliding_window_aggregate_executes() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // t=20: first record, process_normal → left window [10,20] count=1.
     d.pipe_input(
         "in",
@@ -3290,7 +3290,7 @@ fn sliding_window_aggregate_executes() {
 /// first two records produce NO output.
 #[test]
 fn sliding_window_emit_final_emits_only_on_close() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, I64Serde, Produced, SlidingWindows, StringSerde, TimeWindowedSerde,
         dsl::{EmitStrategy, StreamsBuilder},
     };
@@ -3309,7 +3309,7 @@ fn sliding_window_emit_final_emits_only_on_close() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     let consume = || Consumed::with(StringSerde, StringSerde);
     let p = || Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), I64Serde);
     // Two in-window records (grace 100 keeps their windows open).
@@ -3341,7 +3341,7 @@ fn sliding_window_emit_final_emits_only_on_close() {
 /// from a direct `count_explicit` call.
 #[test]
 fn sliding_window_count_nonexplicit_builds_and_runs() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, I64Serde, Produced, SlidingWindows, StringSerde, TimeWindowedSerde, Window,
         Windowed, dsl::StreamsBuilder,
     };
@@ -3356,7 +3356,7 @@ fn sliding_window_count_nonexplicit_builds_and_runs() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // Single record at t=15, process_normal → left window [5,15] count=1.
     d.pipe_input(
         "in",
@@ -3386,7 +3386,7 @@ fn sliding_window_count_nonexplicit_builds_and_runs() {
 /// emission.
 #[test]
 fn sliding_window_reduce_nonexplicit() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         Consumed, Produced, SlidingWindows, StringSerde, TimeWindowedSerde, Window, Windowed,
         dsl::StreamsBuilder,
     };
@@ -3401,7 +3401,7 @@ fn sliding_window_reduce_nonexplicit() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(10)), StringSerde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // Single record at t=15: no prior record in window, seeds with value.clone() → "hello".
     d.pipe_input(
         "in",
@@ -3431,7 +3431,7 @@ fn sliding_window_reduce_nonexplicit() {
 /// returns the most recent record by commit timestamp.
 #[test]
 fn versioned_table_keeps_latest_on_out_of_order() {
-    use crabka_client_streams::{I64Serde, Materialized, StringSerde};
+    use krabka_client_streams::{I64Serde, Materialized, StringSerde};
     let b = StreamsBuilder::new();
     b.table_explicit(
         "in",
@@ -3441,7 +3441,7 @@ fn versioned_table_keeps_latest_on_out_of_order() {
     .to_stream()
     .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     // Pipe @ts=200 first, then the earlier @ts=100 (out-of-order).
     d.pipe_input(
         "in",
@@ -3514,7 +3514,7 @@ fn versioned_table_changelog_matches_jvm() {
         Materialized::with(StringSerde, I64Serde).as_versioned("vt", millis(600_000)),
     );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for (k, v, ts) in [
         ("k", 10, 100),
         ("k", 20, 200),
@@ -3571,7 +3571,7 @@ fn versioned_table_behavioral_matches_jvm() {
     .to_stream()
     .to("out");
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     for (k, v, ts) in [
         ("k", 10, 100),
         ("k", 20, 200),

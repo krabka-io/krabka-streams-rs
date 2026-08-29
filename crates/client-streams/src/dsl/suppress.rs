@@ -7,7 +7,7 @@
 //! constructor, `record_cap()`, and `is_emit_early()`. Slice D adds the logging
 //! toggle.
 
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 /// The bound on the suppress buffer and the behaviour when it is full.
 ///

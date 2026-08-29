@@ -9,10 +9,10 @@
 //! total, and writes them to `orders-pb-doubled`. It matches the Avro and JSON
 //! examples, and only the serde format differs.
 //!
-//! Run: `cargo run -p crabka-client-streams --example protobuf_pipeline`
+//! Run: `cargo run -p krabka-client-streams --example protobuf_pipeline`
 
-use crabka_client_streams::{DefaultSerde, SchemaSerde, StreamsApp};
-use crabka_schema_serde::format::protobuf::ProtobufSerde;
+use krabka_client_streams::{DefaultSerde, SchemaSerde, StreamsApp};
+use krabka_schema_serde::format::protobuf::ProtobufSerde;
 
 /// Embedded descriptor set that the generated `Order` references. Regenerate it
 /// with examples/gen/regenerate.sh.

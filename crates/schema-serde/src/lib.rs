@@ -1,9 +1,9 @@
-//! Confluent-compatible schema serdes for Crabka clients.
+//! Confluent-compatible schema serdes for Krabka clients.
 //!
 //! This crate frames payloads as `magic(0x00) | schema_id(4 BE) | body`. A
 //! Protobuf payload also carries a message-index. The crate registers schemas
 //! with a Confluent-compatible Schema Registry and resolves them from it. The
-//! typed serializers here do not depend on one client: `crabka-client-streams`
+//! typed serializers here do not depend on one client: `krabka-client-streams`
 //! bridges them now, and other clients can bridge them later.
 
 pub mod cache;

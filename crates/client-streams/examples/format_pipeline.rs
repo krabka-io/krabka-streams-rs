@@ -4,7 +4,7 @@
 //! summary Protobuf. It runs against an in-process broker and an in-process
 //! Schema Registry, and it needs no external service.
 //!
-//! Run: `cargo run -p crabka-client-streams --example format_pipeline --features polars,arrow`
+//! Run: `cargo run -p krabka-client-streams --example format_pipeline --features polars,arrow`
 
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
@@ -13,11 +13,11 @@ use ::arrow::{
     datatypes::{DataType as ArrowDataType, Field, Schema as ArrowSchema},
 };
 use bytes::Bytes;
-use crabka_broker::{Broker, BrokerConfig, BrokerHandle};
-use crabka_client_admin::{AdminClient, CreateTopicSpec};
-use crabka_client_consumer::{AutoOffsetReset, Consumer};
-use crabka_client_producer::{Acks, Producer, ProducerRecord};
-use crabka_client_streams::{
+use krabka_broker::{Broker, BrokerConfig, BrokerHandle};
+use krabka_client_admin::{AdminClient, CreateTopicSpec};
+use krabka_client_consumer::{AutoOffsetReset, Consumer};
+use krabka_client_producer::{Acks, Producer, ProducerRecord};
+use krabka_client_streams::{
     SchemaSerde,
     columnar::{
         serde::{arrow::ArrowIpcSerde, polars::PolarsIpcSerde},
@@ -29,12 +29,12 @@ use crabka_client_streams::{
     },
     processor::serde::{Serde, SerdeRole},
 };
-use crabka_schema_registry::{
+use krabka_schema_registry::{
     config::{RegistryConfig, RegistryRuntimeConfig, SecurityConfig},
     kafkastore::KafkaStore,
     rest::{self, AppState},
 };
-use crabka_schema_serde::{
+use krabka_schema_serde::{
     RegistryClient,
     cache::{CacheConfig, SchemaCache},
     format::{json::JsonSerde, protobuf::ProtobufSerde},
@@ -180,7 +180,7 @@ async fn drain(bootstrap: &str, topic: &str, group: &str, want: usize) -> Vec<By
             break;
         }
         let recs = consumer
-            .poll(crabka_units::millis(500))
+            .poll(krabka_units::millis(500))
             .await
             .expect("poll");
         for r in recs {
@@ -230,7 +230,7 @@ async fn main() {
                     replicas: 1,
                     configs: BTreeMap::new(),
                 }],
-                crabka_units::secs(5),
+                krabka_units::secs(5),
             )
             .await
             .expect("create topic");

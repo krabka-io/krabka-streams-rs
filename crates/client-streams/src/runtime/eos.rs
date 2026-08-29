@@ -20,7 +20,7 @@ pub enum ProcessingGuarantee {
 
 /// Streams group metadata for `send_offsets_to_transaction`.
 ///
-/// This type maps to the native `crabka_client_consumer::ConsumerGroupMetadata`.
+/// This type maps to the native `krabka_client_consumer::ConsumerGroupMetadata`.
 #[derive(Debug, Clone)]
 pub struct StreamsGroupMeta {
     pub group: String,
@@ -102,7 +102,7 @@ pub(crate) mod mock {
             let mut fenced = self.fence_at.lock().unwrap();
             if *fenced == Some(s) {
                 *fenced = None;
-                return Err(crabka_client_producer::ProducerError::FencedProducer.into());
+                return Err(krabka_client_producer::ProducerError::FencedProducer.into());
             }
             Ok(())
         }

@@ -14,7 +14,7 @@ use std::{any::Any, collections::BTreeMap};
 
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes};
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::{
     processor::serde::Serde,

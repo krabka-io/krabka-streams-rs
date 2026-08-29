@@ -380,7 +380,7 @@ impl SnapshotStore for NoSnapshotStore {
 /// # Examples
 ///
 /// ```
-/// use crabka_client_streams::store::snapshot::{FileSnapshotStore, SnapshotKey};
+/// use krabka_client_streams::store::snapshot::{FileSnapshotStore, SnapshotKey};
 ///
 /// let store = FileSnapshotStore::new(std::env::temp_dir().join("krabka-snapshots"));
 /// // transactions-0-1-epoch-7.snapshot
@@ -633,7 +633,7 @@ mod tests {
 
     #[tokio::test]
     async fn window_store_rewinds_to_its_cut() {
-        use crabka_units::prelude::*;
+        use krabka_units::prelude::*;
 
         use crate::store::window::{WindowBytesStore, WindowStore};
 
@@ -691,7 +691,7 @@ mod tests {
 
     #[tokio::test]
     async fn versioned_store_rewinds_to_its_cut_with_its_stream_time() {
-        use crabka_units::prelude::*;
+        use krabka_units::prelude::*;
 
         use crate::store::versioned::{VersionedBytesStore, VersionedKeyValueStore};
 

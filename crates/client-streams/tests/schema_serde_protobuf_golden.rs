@@ -7,7 +7,7 @@
 //! top-level message-index is the single `0x00` byte.
 
 use assert2::check;
-use crabka_schema_serde::{
+use krabka_schema_serde::{
     RegistryClient,
     cache::{CacheConfig, SchemaCache},
     format::{SchemaSerializer, protobuf::ProtobufSerde},

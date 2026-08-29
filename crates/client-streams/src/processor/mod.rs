@@ -28,7 +28,7 @@ pub use serde::{
 /// (output_key, output_value)` declaration.
 ///
 /// ```
-/// use crabka_client_streams::{Record, impl_processor};
+/// use krabka_client_streams::{Record, impl_processor};
 ///
 /// struct Upper;
 /// impl_processor! {
@@ -80,7 +80,7 @@ macro_rules! impl_processor {
 /// output_value` declaration.
 ///
 /// ```
-/// use crabka_client_streams::impl_fixed_key_processor;
+/// use krabka_client_streams::impl_fixed_key_processor;
 ///
 /// struct UpperValue;
 /// impl_fixed_key_processor! {
