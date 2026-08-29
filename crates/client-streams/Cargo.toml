@@ -20,7 +20,7 @@ workspace = true
 krabka-protocol = { version = "0.4.0", default-features = false }
 # Schema-registry serdes (Avro/Protobuf/JSON) are a first-class, always-on part
 # of the streams client — no feature gate.
-krabka-schema-serde = { version = "0.4.0", path = "../schema-serde", features = ["avro", "protobuf", "json"] }
+krabka-schema-serde = { version = "0.4.0", features = ["avro", "protobuf", "json"] }
 krabka-client-core = { version = "0.4.0" }
 krabka-client-consumer = { version = "0.4.0" }
 krabka-client-producer = { version = "0.4.0" }

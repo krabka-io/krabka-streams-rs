@@ -11,14 +11,15 @@ and [`krabka-streams-java`](https://github.com/krabka-io/krabka-streams-java).
 It builds on [`krabka-protocol`](https://github.com/krabka-io/krabka-protocol)
 and [`krabka-client-rs`](https://github.com/krabka-io/krabka-client-rs), and its
 integration suites boot a broker from
-[`krabka-broker`](https://github.com/krabka-io/krabka-broker).
+[`krabka-broker`](https://github.com/krabka-io/krabka-broker). Schema-aware
+serialisation comes from `krabka-schema-serde`, which lives in
+[`krabka-schema-registry`](https://github.com/krabka-io/krabka-schema-registry).
 
 ## Crates
 
 | Crate | What it is |
 | --- | --- |
 | `krabka-client-streams` | The streams client: DSL, topology, state stores, interactive queries |
-| `krabka-schema-serde` | Avro, JSON Schema and Protobuf serialisation against a schema registry |
 
 ## Build
 

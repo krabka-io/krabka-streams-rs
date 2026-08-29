@@ -89,11 +89,11 @@ krabka-remote-storage-topic = { git = "https://github.com/krabka-io/krabka-broke
 krabka-telemetry = { git = "https://github.com/krabka-io/krabka-broker", rev = "32dd555ec1b7bf9d82b4b7bcdb0c9332f7029617" }
 krabka-throttle = { git = "https://github.com/krabka-io/krabka-broker", rev = "32dd555ec1b7bf9d82b4b7bcdb0c9332f7029617" }
 krabka-verified = { git = "https://github.com/krabka-io/krabka-broker", rev = "32dd555ec1b7bf9d82b4b7bcdb0c9332f7029617" }
-# `krabka-broker` depends on `krabka-schema-serde`, so the git dependency above
-# needs it patched here too. Resolved from krabka-schema-registry, the same
-# source the broker itself patches, so the broker gets the copy it was built
-# against. Note this workspace also vendors a `krabka-schema-serde` member;
-# the two have diverged and should be reconciled separately.
+# `krabka-schema-serde` comes from krabka-schema-registry, the same source the
+# broker itself patches, so `krabka-broker` above and `krabka-client-streams`
+# here share one copy. This workspace used to vendor its own member of that
+# name; it was a strict subset of the registry crate, and two crates of one
+# name in a single graph is not something rules_rs can resolve.
 krabka-schema-serde = { git = "https://github.com/krabka-io/krabka-schema-registry", rev = "ee9c3933fb1d71735846e7e5e33ea6ab3a694dc5" }
 krabka-client-admin = { git = "https://github.com/krabka-io/krabka-client-rs", rev = "f0c86c1ccdecd1776e32349764d7d2efe5dae347" }
 krabka-client-consumer = { git = "https://github.com/krabka-io/krabka-client-rs", rev = "f0c86c1ccdecd1776e32349764d7d2efe5dae347" }
