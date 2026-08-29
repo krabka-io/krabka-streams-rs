@@ -518,7 +518,7 @@ where
 #[cfg(test)]
 mod tests {
     use assert2::check;
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     use crate::dsl::StreamsBuilder;
 
@@ -558,7 +558,7 @@ mod tests {
 #[cfg(test)]
 mod cogroup_caching_tests {
     use assert2::check;
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     use crate::{
         I64Serde, Materialized, Produced, StringSerde, dsl::StreamsBuilder,

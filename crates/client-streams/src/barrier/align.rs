@@ -36,7 +36,7 @@ pub struct Barrier {
 /// ```
 /// use std::sync::Arc;
 ///
-/// use crabka_client_streams::barrier::{Barrier, BarrierListener};
+/// use krabka_client_streams::barrier::{Barrier, BarrierListener};
 ///
 /// let listener: Arc<dyn BarrierListener> =
 ///     Arc::new(|barrier: &Barrier| println!("aligned on epoch {}", barrier.cut.epoch));
@@ -69,7 +69,7 @@ where
 /// ```
 /// use std::sync::Arc;
 ///
-/// use crabka_client_streams::{
+/// use krabka_client_streams::{
 ///     barrier::{Barrier, BarrierAlignment},
 ///     store::snapshot::FileSnapshotStore,
 /// };

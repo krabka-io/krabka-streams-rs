@@ -7,8 +7,8 @@
 //! with the same key at different timestamps must BOTH buffer. There is no
 //! replace-by-key.
 //!
-//! The changelog format is Crabka-internal. There is no JVM byte-exact golden for
-//! this buffer, so the format only needs to be self-consistent for Crabka's own
+//! The changelog format is Krabka-internal. There is no JVM byte-exact golden for
+//! this buffer, so the format only needs to be self-consistent for Krabka's own
 //! clean-slate restore.
 //!
 //! - Changelog KEY  = `(ts, seq)` encoded big-endian (8 bytes ts ‖ 4 bytes seq).

@@ -14,7 +14,7 @@ use std::{
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::{
     dsl::processors::outer_join_store::{

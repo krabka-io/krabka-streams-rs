@@ -20,7 +20,7 @@
 //! ```no_run
 //! use std::sync::Arc;
 //!
-//! use crabka_client_streams::{barrier::BarrierAlignment, store::snapshot::FileSnapshotStore};
+//! use krabka_client_streams::{barrier::BarrierAlignment, store::snapshot::FileSnapshotStore};
 //!
 //! # fn build() -> BarrierAlignment {
 //! let snapshots = Arc::new(FileSnapshotStore::new("/var/lib/app/state"));

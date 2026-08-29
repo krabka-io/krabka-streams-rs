@@ -5,10 +5,10 @@
 
 use std::time::Duration;
 
-use crabka_broker::{Broker, BrokerConfig};
-use crabka_client_core::Client;
-use crabka_client_streams::{NodeHandle, StreamsEvent, StreamsMembership, Topology};
-use crabka_protocol::owned::{
+use krabka_broker::{Broker, BrokerConfig};
+use krabka_client_core::Client;
+use krabka_client_streams::{NodeHandle, StreamsEvent, StreamsMembership, Topology};
+use krabka_protocol::owned::{
     create_topics_request::{CreatableTopic, CreateTopicsRequest},
     update_features_request::{FeatureUpdateKey, UpdateFeaturesRequest},
 };

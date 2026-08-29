@@ -9,11 +9,11 @@
 
 use std::{sync::Arc, time::Duration};
 
-use crabka_client_core::{
+use krabka_client_core::{
     Client, ClientDnsTimeout, ClientFrameMax, ConnectionDispatchQueueCapacity,
 };
-use crabka_protocol::owned::streams_group_heartbeat_request::StreamsGroupHeartbeatRequest;
-use crabka_units::prelude::*;
+use krabka_protocol::owned::streams_group_heartbeat_request::StreamsGroupHeartbeatRequest;
+use krabka_units::prelude::*;
 use refined_type::rule::MinMaxU128;
 use tokio::{
     sync::{Mutex, mpsc},
@@ -229,7 +229,7 @@ impl StreamsMembership {
     /// Panics if synchronized client state is poisoned or a response violates an invariant established by protocol validation.
     pub async fn start(
         #[builder(into)] bootstrap: String,
-        #[builder(into, default = "crabka-streams".to_string())] client_id: String,
+        #[builder(into, default = "krabka-streams".to_string())] client_id: String,
         #[builder(into)] group_id: String,
         topology: std::sync::Arc<crate::topology::BuiltTopology>,
         #[builder(into)] process_id: Option<String>,
@@ -241,7 +241,7 @@ impl StreamsMembership {
         #[builder(default)] broker_dns_timeout: ClientDnsTimeout,
         #[builder(default)] dispatch_queue_capacity: ConnectionDispatchQueueCapacity,
         #[builder(default)] frame_max: ClientFrameMax,
-        security: Option<crabka_client_core::security::ClientSecurity>,
+        security: Option<krabka_client_core::security::ClientSecurity>,
         schema_prewarm: Option<std::sync::Arc<dyn SchemaPrewarm>>,
     ) -> Result<Self, StreamsClientError> {
         if group_id.is_empty() {
@@ -465,9 +465,9 @@ fn should_emit_statuses<T>(statuses: Option<&Vec<T>>) -> bool {
 
 /// Map a join-response error code to a typed error (0 = ok).
 fn map_error(
-    resp: crabka_protocol::owned::streams_group_heartbeat_response::StreamsGroupHeartbeatResponse,
+    resp: krabka_protocol::owned::streams_group_heartbeat_response::StreamsGroupHeartbeatResponse,
 ) -> Result<
-    crabka_protocol::owned::streams_group_heartbeat_response::StreamsGroupHeartbeatResponse,
+    krabka_protocol::owned::streams_group_heartbeat_response::StreamsGroupHeartbeatResponse,
     StreamsClientError,
 > {
     // Kafka error codes for the STREAMS_INVALID_TOPOLOGY family (KIP-1071).
@@ -502,8 +502,8 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use assert2::check;
-    use crabka_protocol::owned::streams_group_heartbeat_response::StreamsGroupHeartbeatResponse;
-    use crabka_units::prelude::*;
+    use krabka_protocol::owned::streams_group_heartbeat_response::StreamsGroupHeartbeatResponse;
+    use krabka_units::prelude::*;
     use tokio::sync::{Mutex, mpsc};
     use tokio_util::sync::CancellationToken;
 

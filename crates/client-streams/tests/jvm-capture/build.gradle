@@ -3,7 +3,7 @@
 // Two entry points:
 //   * `capture`       — no broker. Builds the 5 DSL topologies with optimization=all and
 //                       runs Kafka's own DSL→heartbeat conversion via reflection, writing
-//                       Crabka wire-shape JSON fixtures. (mechanism A — the committed path)
+//                       Krabka wire-shape JSON fixtures. (mechanism A — the committed path)
 //   * `captureBroker` — cross-check. Runs the `count` topology against a real Apache Kafka
 //                       4.1 broker with group.protocol=streams and dumps the LIVE
 //                       StreamsRebalanceData the client actually sends. (mechanism B)
@@ -62,7 +62,7 @@ dependencies {
 
 // mechanism A: write the 5 golden fixtures (no broker).
 application {
-    mainClass = 'crabka.capture.Capture'
+    mainClass = 'krabka.capture.Capture'
 }
 
 tasks.named('run') {
@@ -75,7 +75,7 @@ tasks.register('captureBroker', JavaExec) {
     group = 'verification'
     description = 'Run the count topology against a real Kafka 4.1 broker and dump the live StreamsRebalanceData.'
     classpath = sourceSets.verify.runtimeClasspath
-    mainClass = 'crabka.capture.CaptureBroker'
+    mainClass = 'krabka.capture.CaptureBroker'
 }
 
 java {

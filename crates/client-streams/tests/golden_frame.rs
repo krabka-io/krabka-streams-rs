@@ -2,7 +2,7 @@
 //! Processor-API topology must match the JVM 4.x fixture.
 
 use assert2::check;
-use crabka_client_streams::{NodeHandle, Topology};
+use krabka_client_streams::{NodeHandle, Topology};
 
 #[test]
 fn single_source_sink_matches_jvm_fixture() {

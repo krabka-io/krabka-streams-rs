@@ -2,11 +2,11 @@
 //! goldens.
 mod support;
 
-use crabka_client_streams::{
+use krabka_client_streams::{
     Consumed, I64Serde, Materialized, Produced, StringSerde, dsl::StreamsBuilder,
 };
 
-fn assert_matches_fixture(wire: &crabka_client_streams::topology::WireTopology, fixture: &str) {
+fn assert_matches_fixture(wire: &krabka_client_streams::topology::WireTopology, fixture: &str) {
     let path = support::testdata(&format!("golden/dsl/{fixture}.topology.json"));
     let expected: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display())),
@@ -53,7 +53,7 @@ fn cogroup_matches_jvm_behavior() {
         .to_stream()
         .to_explicit("out", Produced::with(StringSerde, I64Serde));
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // Same interleaved script as CogroupBehavior.java.
     let s = StringSerde;
@@ -103,7 +103,7 @@ fn cogroup_default_serde_aggregate_runs() {
         .to_stream()
         .to_explicit("out", Produced::with(StringSerde, I64Serde));
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
     let s = StringSerde;
     d.pipe_input(
         "in1",

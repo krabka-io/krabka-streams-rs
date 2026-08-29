@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use super::builder::TopologyError;
 

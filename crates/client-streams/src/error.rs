@@ -3,9 +3,9 @@
 /// Errors surfaced by the streams membership client.
 #[derive(Debug, thiserror::Error)]
 pub enum StreamsClientError {
-    /// A transport failure or a dispatch failure from `crabka-client-core`.
+    /// A transport failure or a dispatch failure from `krabka-client-core`.
     #[error(transparent)]
-    Transport(#[from] crabka_client_core::ClientError),
+    Transport(#[from] krabka_client_core::ClientError),
     /// The topology build failed, because the node graph is bad.
     #[error("topology error: {0}")]
     Topology(#[from] crate::topology::TopologyError),
@@ -34,7 +34,7 @@ pub enum StreamsClientError {
     /// The transactional or idempotent producer was fenced by a newer epoch.
     /// This is fatal for the stream thread and must never enter retry rollback.
     #[error(transparent)]
-    Producer(#[from] crabka_client_producer::ProducerError),
+    Producer(#[from] krabka_client_producer::ProducerError),
     /// An interactive query failed.
     #[error(transparent)]
     InteractiveQuery(#[from] crate::runtime::iq::IqError),
@@ -53,7 +53,7 @@ impl StreamsClientError {
     pub(crate) fn is_producer_fenced(&self) -> bool {
         matches!(
             self,
-            Self::Producer(crabka_client_producer::ProducerError::FencedProducer)
+            Self::Producer(krabka_client_producer::ProducerError::FencedProducer)
         )
     }
 }

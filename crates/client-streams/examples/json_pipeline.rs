@@ -9,10 +9,10 @@
 //! total, and writes them to `orders-json-doubled`. It matches the Avro and
 //! Protobuf examples, and only the serde format differs.
 //!
-//! Run: `cargo run -p crabka-client-streams --example json_pipeline`
+//! Run: `cargo run -p krabka-client-streams --example json_pipeline`
 
-use crabka_client_streams::{DefaultSerde, SchemaSerde, StreamsApp};
-use crabka_schema_serde::format::json::JsonSerde;
+use krabka_client_streams::{DefaultSerde, SchemaSerde, StreamsApp};
+use krabka_schema_serde::format::json::JsonSerde;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

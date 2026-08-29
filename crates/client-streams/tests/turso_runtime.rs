@@ -11,13 +11,13 @@
 
 use std::time::Duration;
 
-use crabka_broker::{Broker, BrokerConfig, BrokerHandle};
-use crabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
-use crabka_client_streams::{
+use krabka_broker::{Broker, BrokerConfig, BrokerHandle};
+use krabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
+use krabka_client_streams::{
     I64Serde, KafkaStreams, NodeHandle, Processor, ProcessorContext, Record, StoreBackend,
     StringSerde, Topology,
 };
-use crabka_protocol::owned::{
+use krabka_protocol::owned::{
     create_topics_request::{CreatableTopic, CreateTopicsRequest},
     update_features_request::{FeatureUpdateKey, UpdateFeaturesRequest},
 };
@@ -94,7 +94,7 @@ impl Processor<String, String, String, i64> for Counter {
     }
 }
 
-fn counting_topology(app_id: &str) -> crabka_client_streams::BuiltTopology {
+fn counting_topology(app_id: &str) -> krabka_client_streams::BuiltTopology {
     let mut topo = Topology::new();
     let src: NodeHandle<String, String> = topo.add_source("src", ["stream-in"]);
     let c = topo.add_processor("c", || Counter, [&src]);
@@ -150,8 +150,8 @@ async fn collect_output_keyed(
             topic_id,
             0,
             next_offset,
-            crabka_units::millis(500),
-            crabka_units::mebibytes(1),
+            krabka_units::millis(500),
+            krabka_units::mebibytes(1),
         )
         .await
         .unwrap_or_default();
@@ -208,7 +208,7 @@ async fn turso_stateful_count_and_restart_restore() {
     let turso_dir = tempfile::TempDir::new().unwrap();
 
     // ── 1. Produce ["a","a","b"] to stream-in ─────────────────────────────────
-    let producer = crabka_client_producer::Producer::builder()
+    let producer = krabka_client_producer::Producer::builder()
         .bootstrap(&bootstrap)
         .build()
         .await
@@ -217,7 +217,7 @@ async fn turso_stateful_count_and_restart_restore() {
     for val in ["a", "a", "b"] {
         drop(
             producer
-                .send(crabka_client_producer::ProducerRecord {
+                .send(krabka_client_producer::ProducerRecord {
                     topic: "stream-in".into(),
                     partition: Some(0),
                     key: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
@@ -278,7 +278,7 @@ async fn turso_stateful_count_and_restart_restore() {
     // ── 5. Queue one more "a" to stream-in BEFORE the fresh instance starts ──
     drop(
         producer
-            .send(crabka_client_producer::ProducerRecord {
+            .send(krabka_client_producer::ProducerRecord {
                 topic: "stream-in".into(),
                 partition: Some(0),
                 key: Some(bytes::Bytes::copy_from_slice(b"a")),

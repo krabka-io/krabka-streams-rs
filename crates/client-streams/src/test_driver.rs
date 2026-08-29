@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::{
     processor::{

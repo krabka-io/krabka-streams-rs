@@ -1,7 +1,7 @@
 use apache_avro::AvroSchema;
 use assert2::check;
-use crabka_client_streams::{SchemaSerde, processor::serde::Serde};
-use crabka_schema_serde::{
+use krabka_client_streams::{SchemaSerde, processor::serde::Serde};
+use krabka_schema_serde::{
     RegistryClient,
     cache::{CacheConfig, SchemaCache},
     format::avro::AvroSerde,

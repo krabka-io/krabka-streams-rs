@@ -279,7 +279,7 @@ impl<K: 'static, V: 'static> ReadOnlySessionStore<K, V> {
 
 #[cfg(test)]
 mod tests {
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     use super::*;
     use crate::{

@@ -17,10 +17,3 @@ alias(
     name = "client-streams",
     actual = "//crates/client-streams",
 )
-
-# Schema-registry-aware serialisation, which the streams client reads and
-# writes records through.
-alias(
-    name = "schema-serde",
-    actual = "//crates/schema-serde",
-)

@@ -18,7 +18,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::{
     dsl::{
@@ -2125,7 +2125,7 @@ where
 #[cfg(test)]
 mod tests {
     use assert2::check;
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     use crate::dsl::builder::StreamsBuilder;
 
@@ -2248,7 +2248,7 @@ mod tests {
 #[cfg(test)]
 mod to_table_caching_tests {
     use assert2::check;
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     use crate::{
         I64Serde, Materialized, Produced, StringSerde, dsl::StreamsBuilder,

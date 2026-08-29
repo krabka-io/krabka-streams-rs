@@ -6,7 +6,7 @@
 
 use std::collections::VecDeque;
 
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use super::{
     erased::{Dispatch, ErasedRecord, OutputRecord, ProcessorError},

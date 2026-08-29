@@ -9,8 +9,8 @@
 
 use std::sync::Arc;
 
-use crabka_client_core::{Client, ClientError};
-use crabka_protocol::owned::{
+use krabka_client_core::{Client, ClientError};
+use krabka_protocol::owned::{
     common::{
         streams_group_heartbeat_request::{
             task_ids::TaskIds as ReqTaskIds, task_offset::TaskOffset,
@@ -20,7 +20,7 @@ use crabka_protocol::owned::{
     streams_group_heartbeat_request::StreamsGroupHeartbeatRequest,
     streams_group_heartbeat_response::StreamsGroupHeartbeatResponse,
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -319,7 +319,7 @@ mod tests {
     use std::{collections::VecDeque, sync::Mutex as StdMutex, time::Duration};
 
     use assert2::check;
-    use crabka_protocol::owned::common::streams_group_heartbeat_response::task_ids::TaskIds as RespTaskIds2;
+    use krabka_protocol::owned::common::streams_group_heartbeat_response::task_ids::TaskIds as RespTaskIds2;
     use tokio_util::sync::CancellationToken;
 
     use super::*;
@@ -547,7 +547,7 @@ mod tests {
 
     #[tokio::test]
     async fn heartbeat_echoes_owned_active_tasks() {
-        use crabka_protocol::owned::common::streams_group_heartbeat_response::task_ids::TaskIds as RespTids;
+        use krabka_protocol::owned::common::streams_group_heartbeat_response::task_ids::TaskIds as RespTids;
         let fake = FakeTransport::new(vec![ok_resp(8, vec![0])]);
         let sent = fake.sent_arc();
         let (st, _rx) = state_with(fake);
@@ -564,7 +564,7 @@ mod tests {
 
     #[tokio::test]
     async fn emit_response_sends_not_ready_for_status() {
-        use crabka_protocol::owned::common::streams_group_heartbeat_response::status::Status;
+        use krabka_protocol::owned::common::streams_group_heartbeat_response::status::Status;
         let fake = FakeTransport::new(vec![]);
         let (st, mut rx) = state_with(fake);
         let resp = StreamsGroupHeartbeatResponse {
@@ -670,7 +670,7 @@ mod tests {
     }
 
     fn resp_plain(active: Vec<i32>) -> StreamsGroupHeartbeatResponse {
-        use crabka_protocol::owned::common::streams_group_heartbeat_response::task_ids::TaskIds;
+        use krabka_protocol::owned::common::streams_group_heartbeat_response::task_ids::TaskIds;
         StreamsGroupHeartbeatResponse {
             active_tasks: Some(vec![TaskIds {
                 subtopology_id: "0".into(),

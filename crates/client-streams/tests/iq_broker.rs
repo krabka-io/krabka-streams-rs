@@ -9,13 +9,13 @@
 
 use std::time::Duration;
 
-use crabka_broker::{Broker, BrokerConfig, BrokerHandle};
-use crabka_client_core::Client;
-use crabka_client_streams::{
+use krabka_broker::{Broker, BrokerConfig, BrokerHandle};
+use krabka_client_core::Client;
+use krabka_client_streams::{
     I64Serde, IqError, KafkaStreams, NodeHandle, Processor, ProcessorContext, Record,
     StreamsClientError, StringSerde, Topology,
 };
-use crabka_protocol::owned::{
+use krabka_protocol::owned::{
     create_topics_request::{CreatableTopic, CreateTopicsRequest},
     update_features_request::{FeatureUpdateKey, UpdateFeaturesRequest},
 };
@@ -92,7 +92,7 @@ impl Processor<String, String, String, i64> for Counter {
     }
 }
 
-fn counting_topology(app_id: &str) -> crabka_client_streams::BuiltTopology {
+fn counting_topology(app_id: &str) -> krabka_client_streams::BuiltTopology {
     let mut topo = Topology::new();
     let src: NodeHandle<String, String> = topo.add_source("src", ["stream-in"]);
     let c = topo.add_processor("c", || Counter, [&src]);
@@ -117,7 +117,7 @@ async fn interactive_query_kv_store_over_broker() {
     create_topic(&admin, "stream-out", 1).await;
 
     // ── 1. Produce ["a","a","b"] to stream-in ─────────────────────────────────
-    let producer = crabka_client_producer::Producer::builder()
+    let producer = krabka_client_producer::Producer::builder()
         .bootstrap(&bootstrap)
         .build()
         .await
@@ -126,7 +126,7 @@ async fn interactive_query_kv_store_over_broker() {
     for val in ["a", "a", "b"] {
         drop(
             producer
-                .send(crabka_client_producer::ProducerRecord {
+                .send(krabka_client_producer::ProducerRecord {
                     topic: "stream-in".into(),
                     partition: Some(0),
                     key: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),

@@ -11,7 +11,7 @@
 #
 # Mechanism A (default, no broker): builds the 27 DSL topologies with optimization=all
 # and runs Kafka's own DSL -> StreamsGroupHeartbeatRequest.Topology conversion via
-# reflection, writing Crabka wire-shape JSON to ../testdata/golden/dsl/.
+# reflection, writing Krabka wire-shape JSON to ../testdata/golden/dsl/.
 #
 # Usage:
 #   ./run.sh                   # capture fixtures via Gradle in Docker (writes the fixtures)
@@ -62,8 +62,8 @@ case "$MODE" in
         CP="$J/kafka-streams-'"$KAFKA_VERSION"'.jar:$J/kafka-clients-'"$KAFKA_VERSION"'.jar"
         RT="$CP:$J/rocksdbjni-'"$ROCKSDB_VERSION"'.jar:$J/slf4j-api-1.7.36.jar"
         mkdir -p /tmp/build /tests/testdata/golden/dsl
-        javac -cp "$CP" -d /tmp/build src/main/java/crabka/capture/Capture.java
-        java -cp "/tmp/build:$RT" crabka.capture.Capture /tests/testdata/golden/dsl
+        javac -cp "$CP" -d /tmp/build src/main/java/krabka/capture/Capture.java
+        java -cp "/tmp/build:$RT" krabka.capture.Capture /tests/testdata/golden/dsl
       '
     ;;
 
@@ -85,8 +85,8 @@ case "$MODE" in
         CP="$J/kafka-streams-'"$KAFKA_VERSION"'.jar:$J/kafka-clients-'"$KAFKA_VERSION"'.jar"
         RT="$CP:$J/slf4j-api-1.7.36.jar"
         mkdir -p /tmp/build /tests/testdata/suppress_bufval
-        javac -cp "$CP" -d /tmp/build src/main/java/crabka/capture/BufferValueCapture.java
-        java -cp "/tmp/build:$RT" crabka.capture.BufferValueCapture /tests/testdata/suppress_bufval
+        javac -cp "$CP" -d /tmp/build src/main/java/krabka/capture/BufferValueCapture.java
+        java -cp "/tmp/build:$RT" krabka.capture.BufferValueCapture /tests/testdata/suppress_bufval
       '
     ;;
 
@@ -110,8 +110,8 @@ case "$MODE" in
         CP="$J/kafka-streams-'"$KAFKA_VERSION"'.jar:$J/kafka-streams-test-utils-'"$KAFKA_VERSION"'.jar:$J/kafka-clients-'"$KAFKA_VERSION"'.jar:$J/rocksdbjni-'"$ROCKSDB_VERSION"'.jar"
         RT="$CP:$J/slf4j-api-1.7.36.jar"
         mkdir -p /tmp/build /tests/testdata/punctuation
-        javac -cp "$CP" -d /tmp/build src/main/java/crabka/capture/PunctuationBehavior.java
-        java -cp "/tmp/build:$RT" crabka.capture.PunctuationBehavior /tests/testdata/punctuation
+        javac -cp "$CP" -d /tmp/build src/main/java/krabka/capture/PunctuationBehavior.java
+        java -cp "/tmp/build:$RT" krabka.capture.PunctuationBehavior /tests/testdata/punctuation
       '
     ;;
 
@@ -136,8 +136,8 @@ case "$MODE" in
         CP="$J/kafka-streams-'"$KAFKA_VERSION"'.jar:$J/kafka-streams-test-utils-'"$KAFKA_VERSION"'.jar:$J/kafka-clients-'"$KAFKA_VERSION"'.jar:$J/rocksdbjni-'"$ROCKSDB_VERSION"'.jar"
         RT="$CP:$J/slf4j-api-1.7.36.jar"
         mkdir -p /tmp/build /tests/testdata/iq
-        javac -cp "$CP" -d /tmp/build src/main/java/crabka/capture/InteractiveQueryBehavior.java
-        java -cp "/tmp/build:$RT" crabka.capture.InteractiveQueryBehavior /tests/testdata/iq
+        javac -cp "$CP" -d /tmp/build src/main/java/krabka/capture/InteractiveQueryBehavior.java
+        java -cp "/tmp/build:$RT" krabka.capture.InteractiveQueryBehavior /tests/testdata/iq
       '
     ;;
 
@@ -161,8 +161,8 @@ case "$MODE" in
         CP="$J/kafka-streams-'"$KAFKA_VERSION"'.jar:$J/kafka-streams-test-utils-'"$KAFKA_VERSION"'.jar:$J/kafka-clients-'"$KAFKA_VERSION"'.jar:$J/rocksdbjni-'"$ROCKSDB_VERSION"'.jar"
         RT="$CP:$J/slf4j-api-1.7.36.jar"
         mkdir -p /tmp/build /tests/testdata/sliding_window
-        javac -cp "$CP" -d /tmp/build src/main/java/crabka/capture/SlidingWindowBehavior.java
-        java -cp "/tmp/build:$RT" crabka.capture.SlidingWindowBehavior /tests/testdata/sliding_window
+        javac -cp "$CP" -d /tmp/build src/main/java/krabka/capture/SlidingWindowBehavior.java
+        java -cp "/tmp/build:$RT" krabka.capture.SlidingWindowBehavior /tests/testdata/sliding_window
       '
     ;;
 
@@ -189,9 +189,9 @@ case "$MODE" in
         RT="$CP:$J/slf4j-api-1.7.36.jar"
         mkdir -p /tmp/build /tests/testdata/golden/dsl/behavioral
         javac -cp "$CP" -d /tmp/build \
-          src/main/java/crabka/capture/Capture.java \
-          src/main/java/crabka/capture/VersionedTableBehavior.java
-        java -cp "/tmp/build:$RT" crabka.capture.VersionedTableBehavior /tests/testdata/golden/dsl
+          src/main/java/krabka/capture/Capture.java \
+          src/main/java/krabka/capture/VersionedTableBehavior.java
+        java -cp "/tmp/build:$RT" krabka.capture.VersionedTableBehavior /tests/testdata/golden/dsl
       '
     ;;
 
@@ -215,8 +215,8 @@ case "$MODE" in
         CP="$J/kafka-streams-'"$KAFKA_VERSION"'.jar:$J/kafka-streams-test-utils-'"$KAFKA_VERSION"'.jar:$J/kafka-clients-'"$KAFKA_VERSION"'.jar:$J/rocksdbjni-'"$ROCKSDB_VERSION"'.jar"
         RT="$CP:$J/slf4j-api-1.7.36.jar"
         mkdir -p /tmp/build /tests/testdata/cogroup
-        javac -cp "$CP" -d /tmp/build src/main/java/crabka/capture/CogroupBehavior.java
-        java -cp "/tmp/build:$RT" crabka.capture.CogroupBehavior /tests/testdata/cogroup
+        javac -cp "$CP" -d /tmp/build src/main/java/krabka/capture/CogroupBehavior.java
+        java -cp "/tmp/build:$RT" krabka.capture.CogroupBehavior /tests/testdata/cogroup
       '
     ;;
 
@@ -243,9 +243,9 @@ case "$MODE" in
         RT="$CP:$J/slf4j-api-1.7.36.jar"
         mkdir -p /tmp/build /tests/testdata/fk_join
         javac -cp "$CP" -d /tmp/build \
-          src/main/java/crabka/capture/Capture.java \
-          src/main/java/crabka/capture/ForeignKeyJoinBehavior.java
-        java -cp "/tmp/build:$RT" crabka.capture.ForeignKeyJoinBehavior /tests/testdata/fk_join
+          src/main/java/krabka/capture/Capture.java \
+          src/main/java/krabka/capture/ForeignKeyJoinBehavior.java
+        java -cp "/tmp/build:$RT" krabka.capture.ForeignKeyJoinBehavior /tests/testdata/fk_join
       '
     ;;
 
@@ -273,30 +273,30 @@ case "$MODE" in
         RT="$CP:$J/slf4j-api-1.7.36.jar"
         mkdir -p /tmp/build /tests/testdata/versioned_joins
         javac -cp "$CP" -d /tmp/build \
-          src/main/java/crabka/capture/Capture.java \
-          src/main/java/crabka/capture/StreamTableAsOfBehavior.java \
-          src/main/java/crabka/capture/StreamTableGraceBehavior.java \
-          src/main/java/crabka/capture/TableTableVersionedBehavior.java
-        java -cp "/tmp/build:$RT" crabka.capture.StreamTableAsOfBehavior /tests/testdata/versioned_joins
-        java -cp "/tmp/build:$RT" crabka.capture.StreamTableGraceBehavior /tests/testdata/versioned_joins
-        java -cp "/tmp/build:$RT" crabka.capture.TableTableVersionedBehavior /tests/testdata/versioned_joins
+          src/main/java/krabka/capture/Capture.java \
+          src/main/java/krabka/capture/StreamTableAsOfBehavior.java \
+          src/main/java/krabka/capture/StreamTableGraceBehavior.java \
+          src/main/java/krabka/capture/TableTableVersionedBehavior.java
+        java -cp "/tmp/build:$RT" krabka.capture.StreamTableAsOfBehavior /tests/testdata/versioned_joins
+        java -cp "/tmp/build:$RT" krabka.capture.StreamTableGraceBehavior /tests/testdata/versioned_joins
+        java -cp "/tmp/build:$RT" krabka.capture.TableTableVersionedBehavior /tests/testdata/versioned_joins
       '
     ;;
 
   --verify-broker)
     # Mechanism B: stand up a real Kafka 4.1 broker (KRaft, streams groups enabled),
     # run the count topology with group.protocol=streams, dump the live rebalance data.
-    NET=crabka-capture
+    NET=krabka-capture
     docker network create "$NET" >/dev/null 2>&1 || true
-    docker rm -f crabka-broker >/dev/null 2>&1 || true
-    docker run -d --name crabka-broker --network "$NET" \
+    docker rm -f krabka-broker >/dev/null 2>&1 || true
+    docker run -d --name krabka-broker --network "$NET" \
       -e KAFKA_NODE_ID=1 \
       -e KAFKA_PROCESS_ROLES=broker,controller \
       -e KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093 \
-      -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://crabka-broker:9092 \
+      -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://krabka-broker:9092 \
       -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
       -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT \
-      -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@crabka-broker:9093 \
+      -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@krabka-broker:9093 \
       -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
       -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
       -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
@@ -305,7 +305,7 @@ case "$MODE" in
       -e KAFKA_UNSTABLE_FEATURE_VERSIONS_ENABLE=true \
       "mirror.gcr.io/apache/kafka:${KAFKA_VERSION}" >/dev/null
     sleep 8
-    docker exec crabka-broker bash -c '
+    docker exec krabka-broker bash -c '
       /opt/kafka/bin/kafka-features.sh --bootstrap-server localhost:9092 upgrade --feature streams.version=1
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic in  --partitions 2 --replication-factor 1
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic out --partitions 2 --replication-factor 1
@@ -320,11 +320,11 @@ case "$MODE" in
         set -euo pipefail
         CP=$(ls /klibs/*.jar | paste -sd: -)
         mkdir -p /tmp/vbuild
-        javac -cp "$CP" -d /tmp/vbuild src/verify/java/crabka/capture/CaptureBroker.java
-        BOOTSTRAP=crabka-broker:9092 java -cp "/tmp/vbuild:$CP" crabka.capture.CaptureBroker \
+        javac -cp "$CP" -d /tmp/vbuild src/verify/java/krabka/capture/CaptureBroker.java
+        BOOTSTRAP=krabka-broker:9092 java -cp "/tmp/vbuild:$CP" krabka.capture.CaptureBroker \
           | grep -vE "SLF4J|^\[20|INFO|WARN|DEBUG"
       '
-    docker rm -f crabka-broker >/dev/null 2>&1 || true
+    docker rm -f krabka-broker >/dev/null 2>&1 || true
     docker network rm "$NET" >/dev/null 2>&1 || true
     ;;
 
@@ -348,8 +348,8 @@ case "$MODE" in
         CP="$J/kafka-streams-'"$KAFKA_VERSION"'.jar:$J/kafka-streams-test-utils-'"$KAFKA_VERSION"'.jar:$J/kafka-clients-'"$KAFKA_VERSION"'.jar:$J/rocksdbjni-'"$ROCKSDB_VERSION"'.jar"
         RT="$CP:$J/slf4j-api-1.7.36.jar"
         mkdir -p /tmp/build /tests/testdata/emit_final
-        javac -cp "$CP" -d /tmp/build src/main/java/crabka/capture/EmitFinalBehavior.java
-        java -cp "/tmp/build:$RT" crabka.capture.EmitFinalBehavior /tests/testdata/emit_final
+        javac -cp "$CP" -d /tmp/build src/main/java/krabka/capture/EmitFinalBehavior.java
+        java -cp "/tmp/build:$RT" krabka.capture.EmitFinalBehavior /tests/testdata/emit_final
       '
     ;;
 
@@ -376,10 +376,10 @@ case "$MODE" in
         CP="$J/kafka-streams-'"$KAFKA_VERSION"'.jar:$J/kafka-streams-test-utils-'"$KAFKA_VERSION"'.jar:$J/kafka-clients-'"$KAFKA_VERSION"'.jar:$J/rocksdbjni-'"$ROCKSDB_VERSION"'.jar"
         RT="$CP:$J/slf4j-api-1.7.36.jar"
         mkdir -p /tmp/build /tests/testdata/kgrouped_table /tests/testdata/golden/dsl
-        javac -cp "$CP" -d /tmp/build src/main/java/crabka/capture/KGroupedTableBehavior.java
-        java -cp "/tmp/build:$RT" crabka.capture.KGroupedTableBehavior /tests/testdata/kgrouped_table
-        javac -cp "$CP" -d /tmp/build src/main/java/crabka/capture/Capture.java
-        java -cp "/tmp/build:$RT" crabka.capture.Capture /tests/testdata/golden/dsl
+        javac -cp "$CP" -d /tmp/build src/main/java/krabka/capture/KGroupedTableBehavior.java
+        java -cp "/tmp/build:$RT" krabka.capture.KGroupedTableBehavior /tests/testdata/kgrouped_table
+        javac -cp "$CP" -d /tmp/build src/main/java/krabka/capture/Capture.java
+        java -cp "/tmp/build:$RT" krabka.capture.Capture /tests/testdata/golden/dsl
       '
     ;;
 

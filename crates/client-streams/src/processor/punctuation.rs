@@ -20,7 +20,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::processor::{api::ProcessorContext, erased::Dispatch};
 

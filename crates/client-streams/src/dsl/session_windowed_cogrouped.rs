@@ -140,7 +140,7 @@ where
 #[cfg(test)]
 mod caching_tests {
     use assert2::check;
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     use crate::{
         BufferConfig, I64Serde, Materialized, Produced, SessionWindows, StringSerde, Suppressed,

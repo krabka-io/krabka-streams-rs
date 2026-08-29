@@ -73,11 +73,11 @@ pub enum ArrowFilterRowBridgeError {
     },
     /// An integer enum dictionary needs descriptor symbols to resolve numbers to names.
     #[error(
-        "arrow enum field {field} stores numeric values but has no crabka.enum.symbols descriptor metadata"
+        "arrow enum field {field} stores numeric values but has no krabka.enum.symbols descriptor metadata"
     )]
     EnumSymbolsMissing { field: String },
     /// Enum descriptor metadata is not a JSON object mapping numbers to names.
-    #[error("arrow enum field {field} has invalid crabka.enum.symbols metadata")]
+    #[error("arrow enum field {field} has invalid krabka.enum.symbols metadata")]
     InvalidEnumSymbols { field: String },
     /// A decoded schema-registry JSON record contains an object or array shape the bridge cannot map safely.
     #[error("schema-registry row bridge field {field} has unsupported JSON value {value_kind}")]
@@ -471,12 +471,12 @@ fn dictionary_value_to_filter_json(
 fn is_enum_field(field: &Field) -> bool {
     field
         .metadata()
-        .get("crabka.enum")
+        .get("krabka.enum")
         .is_some_and(|value| value == "true")
 }
 
 fn enum_symbol_name(field: &Field, number: i64) -> Result<String, ArrowFilterRowBridgeError> {
-    let Some(symbols) = field.metadata().get("crabka.enum.symbols") else {
+    let Some(symbols) = field.metadata().get("krabka.enum.symbols") else {
         return Err(ArrowFilterRowBridgeError::EnumSymbolsMissing {
             field: field.name().clone(),
         });
@@ -696,9 +696,9 @@ mod tests {
             true,
         );
         enum_field.set_metadata(std::collections::HashMap::from([
-            ("crabka.enum".to_string(), "true".to_string()),
+            ("krabka.enum".to_string(), "true".to_string()),
             (
-                "crabka.enum.symbols".to_string(),
+                "krabka.enum.symbols".to_string(),
                 r#"{"1":"NETWORK_NODE"}"#.to_string(),
             ),
         ]));
@@ -767,7 +767,7 @@ mod tests {
             true,
         );
         enum_field.set_metadata(std::collections::HashMap::from([(
-            "crabka.enum".to_string(),
+            "krabka.enum".to_string(),
             "true".to_string(),
         )]));
         let batch = RecordBatch::try_new(

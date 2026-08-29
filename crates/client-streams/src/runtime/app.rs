@@ -9,11 +9,11 @@
 
 use std::{sync::Arc, time::Duration};
 
-use crabka_client_core::{
+use krabka_client_core::{
     ClientDnsTimeout, ClientFrameMax, ConnectionDispatchQueueCapacity, DEFAULT_CLIENT_FRAME_MAX,
     DEFAULT_CONNECTION_DISPATCH_QUEUE_CAPACITY, DEFAULT_FETCH_MIN, FetchMinBytes,
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 use refined_type::rule::{MinMaxI64, MinMaxU128, MinMaxUsize};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
@@ -697,7 +697,7 @@ mod tests {
     use std::time::Duration;
 
     use assert2::check;
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     use super::{
         DEFAULT_STREAMS_STATE_STORE_CACHE_MAX_BYTES, KafkaStreams,

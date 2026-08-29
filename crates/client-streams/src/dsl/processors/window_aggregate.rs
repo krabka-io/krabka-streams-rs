@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use async_trait::async_trait;
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::{
     dsl::{

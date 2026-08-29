@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use super::request::Position;
 
 /// Why a partition's query gave no result. This mirrors the subset of the JVM
-/// `FailureReason` that crabka can produce locally.
+/// `FailureReason` that krabka can produce locally.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureReason {
     /// The store kind does not support this query variant.

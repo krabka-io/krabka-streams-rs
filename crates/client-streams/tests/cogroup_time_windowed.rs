@@ -2,13 +2,13 @@
 //! behavioral goldens.
 mod support;
 
-use crabka_client_streams::{
+use krabka_client_streams::{
     Consumed, I64Serde, Materialized, Produced, StringSerde, TimeWindowedSerde, TimeWindows,
     dsl::StreamsBuilder,
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
-fn assert_matches_fixture(wire: &crabka_client_streams::topology::WireTopology, fixture: &str) {
+fn assert_matches_fixture(wire: &krabka_client_streams::topology::WireTopology, fixture: &str) {
     let path = support::testdata(&format!("golden/dsl/{fixture}.topology.json"));
     let expected: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display())),
@@ -67,7 +67,7 @@ fn cogroup_time_matches_jvm_behavior() {
             Produced::with(TimeWindowedSerde::new(StringSerde, millis(100)), I64Serde),
         );
     let built = b.build("app").unwrap();
-    let mut d = crabka_client_streams::TopologyTestDriver::new(&built).unwrap();
+    let mut d = krabka_client_streams::TopologyTestDriver::new(&built).unwrap();
 
     // Same interleaved script as CogroupBehavior.java cogroupTime block.
     let s = StringSerde;

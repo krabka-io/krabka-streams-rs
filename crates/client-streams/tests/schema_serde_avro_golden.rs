@@ -7,7 +7,7 @@
 
 use apache_avro::AvroSchema;
 use assert2::check;
-use crabka_schema_serde::{
+use krabka_schema_serde::{
     RegistryClient,
     cache::{CacheConfig, SchemaCache},
     format::{SchemaSerializer, avro::AvroSerde},

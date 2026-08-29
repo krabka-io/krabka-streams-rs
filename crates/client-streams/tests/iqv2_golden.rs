@@ -8,11 +8,11 @@
 //! surface, which covers `KeyQuery`, `RangeQuery`, `WindowKeyQuery`, and
 //! `WindowRangeQuery`, and asserts parity.
 
-use crabka_client_streams::{
+use krabka_client_streams::{
     Consumed, FailureReason, KeyQuery, RangeQuery, StateQueryRequest, StreamsBuilder, StringSerde,
     TimeWindows, TopologyTestDriver, WindowKeyQuery, WindowRangeQuery,
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 use serde_json::Value;
 
 /// The committed golden, parsed once per test.
@@ -22,11 +22,11 @@ fn golden() -> Value {
 }
 
 /// `[value, valid_from, valid_to]` JSON (or `null`) → `Option<VersionedRecord>`.
-fn ver(triple: &Value) -> Option<crabka_client_streams::VersionedRecord<i64>> {
+fn ver(triple: &Value) -> Option<krabka_client_streams::VersionedRecord<i64>> {
     if triple.is_null() {
         return None;
     }
-    Some(crabka_client_streams::VersionedRecord {
+    Some(krabka_client_streams::VersionedRecord {
         value: triple[0].as_i64().unwrap(),
         valid_from: triple[1].as_i64().unwrap(),
         valid_to: triple[2].as_i64(), // null → None
@@ -34,7 +34,7 @@ fn ver(triple: &Value) -> Option<crabka_client_streams::VersionedRecord<i64>> {
 }
 
 /// `[[value, valid_from, valid_to], ...]` JSON → `Vec<VersionedRecord>`.
-fn vers(arr: &Value) -> Vec<crabka_client_streams::VersionedRecord<i64>> {
+fn vers(arr: &Value) -> Vec<krabka_client_streams::VersionedRecord<i64>> {
     arr.as_array()
         .unwrap()
         .iter()
@@ -277,7 +277,7 @@ async fn iqv2_window_key_and_range_parity() {
 /// timestamp as the version `valid_from`.
 #[tokio::test]
 async fn iqv2_versioned_key_and_multi_parity() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         I64Serde, Materialized, MultiVersionedKeyQuery, VersionedKeyQuery,
     };
 

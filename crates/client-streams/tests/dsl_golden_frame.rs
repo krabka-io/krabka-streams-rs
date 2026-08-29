@@ -4,10 +4,10 @@
 //! fixture for the same logical pipeline.
 mod support;
 
-use crabka_client_streams::{Consumed, Produced, StringSerde, dsl::StreamsBuilder};
-use crabka_units::prelude::*;
+use krabka_client_streams::{Consumed, Produced, StringSerde, dsl::StreamsBuilder};
+use krabka_units::prelude::*;
 
-fn assert_matches_fixture(wire: &crabka_client_streams::topology::WireTopology, fixture: &str) {
+fn assert_matches_fixture(wire: &krabka_client_streams::topology::WireTopology, fixture: &str) {
     let path = support::testdata(&format!("golden/dsl/{fixture}.topology.json"));
     let expected: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display())),
@@ -30,7 +30,7 @@ fn stateless_chain_matches_jvm() {
 
 #[test]
 fn windowed_count_matches_jvm() {
-    use crabka_client_streams::{I64Serde, Materialized, TimeWindowedSerde, TimeWindows};
+    use krabka_client_streams::{I64Serde, Materialized, TimeWindowedSerde, TimeWindows};
     // Mirrors Capture.java `windowedCount()`:
     //   stream("in").groupByKey().windowedBy(TimeWindows.ofSizeWithNoGrace(60s)).count()
     //     .toStream().to("out")
@@ -58,7 +58,7 @@ fn windowed_count_matches_jvm() {
 
 #[test]
 fn stream_stream_join_matches_jvm() {
-    use crabka_client_streams::{JoinWindows, StreamJoined, StringSerde};
+    use krabka_client_streams::{JoinWindows, StreamJoined, StringSerde};
     // Mirrors Capture.java `streamStreamJoin()`:
     //   stream("left").join(stream("right"), (a,c)->a+c, JoinWindows 60s, StreamJoined).to("out")
     //
@@ -86,7 +86,7 @@ fn stream_stream_join_matches_jvm() {
 
 #[test]
 fn stream_stream_outer_join_matches_jvm() {
-    use crabka_client_streams::{JoinWindows, StreamJoined, StringSerde};
+    use krabka_client_streams::{JoinWindows, StreamJoined, StringSerde};
     // Mirrors Capture.java `streamStreamOuterJoin()`:
     //   stream("left").outerJoin(stream("right"), (a,c)->a+c, JoinWindows 60s, StreamJoined).to("out")
     //
@@ -121,7 +121,7 @@ fn stream_stream_outer_join_matches_jvm() {
 
 #[test]
 fn session_count_matches_jvm() {
-    use crabka_client_streams::{I64Serde, Materialized, SessionWindowedSerde, SessionWindows};
+    use krabka_client_streams::{I64Serde, Materialized, SessionWindowedSerde, SessionWindows};
     // Mirrors Capture.java `sessionCount()`:
     //   stream("in").groupByKey().windowedBy(SessionWindows gap 60s).count().toStream().to("out")
     //
@@ -146,7 +146,7 @@ fn session_count_matches_jvm() {
 
 #[test]
 fn suppress_until_window_closes_matches_jvm() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         BufferConfig, I64Serde, Materialized, Suppressed, TimeWindowedSerde, TimeWindows,
     };
     // Mirrors Capture.java `suppressUntilWindowCloses()` (logging DISABLED). With the
@@ -176,7 +176,7 @@ fn suppress_until_window_closes_matches_jvm() {
 
 #[test]
 fn suppress_until_window_closes_logged_matches_jvm() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         BufferConfig, I64Serde, Materialized, Suppressed, TimeWindowedSerde, TimeWindows,
     };
     // Mirrors Capture.java `suppressUntilWindowClosesLogged()` — identical to the #13
@@ -205,7 +205,7 @@ fn suppress_until_window_closes_logged_matches_jvm() {
 
 #[test]
 fn count_matches_jvm() {
-    use crabka_client_streams::{I64Serde, Materialized};
+    use krabka_client_streams::{I64Serde, Materialized};
     let b = StreamsBuilder::new();
     b.stream::<String, String>(["in"])
         .select_key(|k: &String, _v: &String| k.clone())
@@ -279,7 +279,7 @@ fn to_table_matches_jvm() {
 
 #[test]
 fn process_matches_jvm() {
-    use crabka_client_streams::{Processor, ProcessorContext, Record};
+    use krabka_client_streams::{Processor, ProcessorContext, Record};
     // Mirrors a JVM `addStateStore("store") + process(supplier, "store") + to("out")`
     // app: ONE subtopology "0", source "in", and the connected store's compact
     // `app-store-changelog`. The Fwd processor just forwards each record unchanged;
@@ -306,7 +306,7 @@ fn process_matches_jvm() {
 
 #[test]
 fn process_values_matches_jvm() {
-    use crabka_client_streams::{FixedKeyProcessor, FixedKeyProcessorContext, FixedKeyRecord};
+    use krabka_client_streams::{FixedKeyProcessor, FixedKeyProcessorContext, FixedKeyRecord};
     // Mirrors a JVM `addStateStore("store") + processValues(supplier, "store") +
     // to("out")` app: ONE subtopology "0", source "in", and the connected store's
     // compact `app-store-changelog`. processValues preserves the key, so the wire is
@@ -381,7 +381,7 @@ fn ktable_ktable_join_matches_jvm() {
 
 #[test]
 fn repartition_merge_matches_jvm() {
-    use crabka_client_streams::{I64Serde, Materialized};
+    use krabka_client_streams::{I64Serde, Materialized};
     // The JVM `repartitionMerge()` app: one `selectKey` feeds TWO bare aggregations
     // (no toStream/to). Under `optimization=all` the two repartitions collapse into
     // a single repartition topic, named after the FIRST aggregation's store.
@@ -406,7 +406,7 @@ fn repartition_merge_matches_jvm() {
 
 #[test]
 fn global_table_join_matches_jvm() {
-    use crabka_client_streams::{GlobalKTable, Materialized};
+    use krabka_client_streams::{GlobalKTable, Materialized};
     // Mirrors Capture.java `globalTableJoin()`: a KStream joined to a GlobalKTable
     // by a key-mapper. The global store/source/processor are INVISIBLE in the wire
     // but the global source consumes subtopology index 0, so the stream subtopology
@@ -453,7 +453,7 @@ fn fk_join_inner_matches_jvm() {
 
 #[test]
 fn sliding_window_count_matches_jvm() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         I64Serde, Materialized, Produced, SlidingWindows, TimeWindowedSerde,
     };
     let b = StreamsBuilder::new();
@@ -477,7 +477,7 @@ fn sliding_window_count_matches_jvm() {
 
 #[test]
 fn sliding_window_aggregate_matches_jvm() {
-    use crabka_client_streams::{
+    use krabka_client_streams::{
         I64Serde, Materialized, Produced, SlidingWindows, TimeWindowedSerde,
     };
     let b = StreamsBuilder::new();
@@ -527,7 +527,7 @@ fn fk_join_left_matches_jvm() {
 
 #[test]
 fn versioned_table_matches_jvm() {
-    use crabka_client_streams::{I64Serde, Materialized, StringSerde};
+    use krabka_client_streams::{I64Serde, Materialized, StringSerde};
     // Mirrors Capture.java `versionedTable()`:
     //   table("in", Consumed, Materialized.as(persistentVersionedKeyValueStore("vt", 600s)))
     //     .toStream().to("out")

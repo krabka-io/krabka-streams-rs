@@ -9,14 +9,14 @@
 
 use std::time::Duration;
 
-use crabka_broker::{Broker, BrokerConfig, BrokerHandle};
-use crabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
-use crabka_client_streams::{I64Serde, KafkaStreams, StreamsBuilder, StringSerde};
-use crabka_protocol::owned::{
+use krabka_broker::{Broker, BrokerConfig, BrokerHandle};
+use krabka_client_core::{Client, Connection, ConnectionOptions, FetchedRecord, fetch_partition};
+use krabka_client_streams::{I64Serde, KafkaStreams, StreamsBuilder, StringSerde};
+use krabka_protocol::owned::{
     create_topics_request::{CreatableTopic, CreateTopicsRequest},
     update_features_request::{FeatureUpdateKey, UpdateFeaturesRequest},
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 // ─── broker helpers ───────────────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ async fn create_topic(client: &Client, topic: &str, partitions: i32) {
 ///
 /// It needs no repartition, because it calls `group_by_key` directly on the
 /// source stream and nothing upstream changes the key.
-fn dsl_counting_topology(app_id: &str) -> crabka_client_streams::BuiltTopology {
+fn dsl_counting_topology(app_id: &str) -> krabka_client_streams::BuiltTopology {
     let b = StreamsBuilder::new();
     b.stream::<String, String>(["dsl-in"])
         .group_by_key()
@@ -131,8 +131,8 @@ async fn collect_output_keyed(
             topic_id,
             0,
             next_offset,
-            crabka_units::millis(500),
-            crabka_units::mebibytes(1),
+            krabka_units::millis(500),
+            krabka_units::mebibytes(1),
         )
         .await
         .unwrap_or_default();
@@ -170,7 +170,7 @@ async fn collect_output_keyed(
 /// not become available within 30s.
 async fn open_counts_store(
     streams: &KafkaStreams,
-) -> crabka_client_streams::ReadOnlyKeyValueStore<String, i64> {
+) -> krabka_client_streams::ReadOnlyKeyValueStore<String, i64> {
     tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             match streams
@@ -188,10 +188,10 @@ async fn open_counts_store(
 }
 
 /// Send one `key`=`value` record to `dsl-in` partition 0 and flush.
-async fn produce_one(producer: &crabka_client_producer::Producer, val: &str) {
+async fn produce_one(producer: &krabka_client_producer::Producer, val: &str) {
     drop(
         producer
-            .send(crabka_client_producer::ProducerRecord {
+            .send(krabka_client_producer::ProducerRecord {
                 topic: "dsl-in".into(),
                 partition: Some(0),
                 key: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
@@ -230,7 +230,7 @@ async fn dsl_count_restart_restore_emit_on_update() {
 
     // ── 1. Produce ["a","a","b"] to dsl-in ───────────────────────────────────
     // key = value so group_by_key().count() counts per value.
-    let producer = crabka_client_producer::Producer::builder()
+    let producer = krabka_client_producer::Producer::builder()
         .bootstrap(&bootstrap)
         .build()
         .await
@@ -239,7 +239,7 @@ async fn dsl_count_restart_restore_emit_on_update() {
     for val in ["a", "a", "b"] {
         drop(
             producer
-                .send(crabka_client_producer::ProducerRecord {
+                .send(krabka_client_producer::ProducerRecord {
                     topic: "dsl-in".into(),
                     partition: Some(0),
                     key: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
@@ -379,7 +379,7 @@ async fn dsl_count_restart_restore_caching_on() {
     create_topic(&admin, "dsl-in", 1).await;
     create_topic(&admin, "dsl-out", 1).await;
 
-    let producer = crabka_client_producer::Producer::builder()
+    let producer = krabka_client_producer::Producer::builder()
         .bootstrap(&bootstrap)
         .build()
         .await

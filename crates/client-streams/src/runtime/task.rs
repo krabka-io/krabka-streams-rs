@@ -699,7 +699,7 @@ mod tests {
     use std::{collections::HashMap, sync::Mutex as StdMutex};
 
     use assert2::check;
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     use super::*;
     use crate::{

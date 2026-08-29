@@ -28,8 +28,8 @@ pub(crate) type StoreFactory = Box<
 /// windows.
 const CHANGELOG_ADDITIONAL_RETENTION: Time = days(1);
 
-use crabka_protocol::owned::streams_group_heartbeat_request::Topology as WireTopology;
-use crabka_units::prelude::*;
+use krabka_protocol::owned::streams_group_heartbeat_request::Topology as WireTopology;
+use krabka_units::prelude::*;
 
 use super::{
     grouping::group_nodes,

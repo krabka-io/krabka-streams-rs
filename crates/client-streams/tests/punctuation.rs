@@ -22,7 +22,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use crabka_client_streams::{
+use krabka_client_streams::{
     Cancellable, Consumed, I64Serde, NodeHandle, Processor, ProcessorContext, Produced,
     PunctuationType, Punctuator, Record, StringSerde, Topology, TopologyTestDriver,
 };

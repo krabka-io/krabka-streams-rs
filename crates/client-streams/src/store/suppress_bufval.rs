@@ -30,7 +30,7 @@
 //! The `-2` "old same as prior" sentinel works like this. The JVM checks
 //! reference identity with `priorValue == oldValue`. On the first buffering of a
 //! key the prior IS the record's `oldValue`, the same array, so it always
-//! serializes as `-2`. Crabka uses value-equality instead. Value-equality
+//! serializes as `-2`. Krabka uses value-equality instead. Value-equality
 //! reproduces every captured case and round-trips cleanly, and the codec stays
 //! self-consistent for restore either way.
 use bytes::{BufMut, Bytes, BytesMut};

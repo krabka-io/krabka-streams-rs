@@ -1,4 +1,4 @@
-package crabka.capture;
+package krabka.capture;
 
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.LongDeserializer;
@@ -46,7 +46,7 @@ public final class VersionedTableBehavior {
         Files.createDirectories(behavioral);
 
         // (key, value, ts). Tombstone (null-value) source records are a
-        // pre-existing DSL-wide limitation in Crabka (the KV KTable source path
+        // pre-existing DSL-wide limitation in Krabka (the KV KTable source path
         // also takes a non-null value), so this oracle exercises in-order +
         // out-of-order PUTs only. Values are Long to match the Rust I64Serde.
         Object[][] battery = {

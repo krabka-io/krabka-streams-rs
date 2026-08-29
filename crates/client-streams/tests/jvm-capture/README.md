@@ -30,7 +30,7 @@ from 4.1.0.
 The DSL topology structure, the auto-generated processor and store names, and the
 optimizer behavior are identical across 4.0 and 4.1. Those names are
 `KSTREAM-SOURCE-0000000000`, `KSTREAM-AGGREGATE-STATE-STORE-0000000002`, and so on. Only
-the wire-topology builder is different, and 4.1.0 is the version that ships it. Crabka's
+the wire-topology builder is different, and 4.1.0 is the version that ships it. Krabka's
 `WireTopology` mirrors this 4.1.0 conversion exactly.
 
 ## Optimization
@@ -41,7 +41,7 @@ in `repartition_merge` and source-topic reuse for table changelogs in `table_reu
 
 ## Capture mechanism A — Kafka's own conversion, no broker (the committed path)
 
-`src/main/java/crabka/capture/Capture.java` drives the same private code path that the
+`src/main/java/krabka/capture/Capture.java` drives the same private code path that the
 JVM client uses to build the heartbeat topology. The harness does not fabricate the data
 and does not derive it by hand:
 
@@ -72,7 +72,7 @@ and does not derive it by hand:
    and sorts `topicConfigs` by key. It also encodes `copartitionGroups` as `int16` indices
    into the sorted source and repartition arrays.
 
-The harness then renders each wire `Subtopology` into Crabka's snake_case wire JSON shape.
+The harness then renders each wire `Subtopology` into Krabka's snake_case wire JSON shape.
 That shape matches `testdata/golden/single_source_sink.topology.json`. Kafka's own code
 does all the sorting and the integer→string subtopology id. The harness only renames
 fields to snake_case.
@@ -91,7 +91,7 @@ fields to snake_case.
 
 ## Capture mechanism B — real broker cross-check (`--verify-broker`)
 
-`src/verify/java/crabka/capture/CaptureBroker.java` starts a real
+`src/verify/java/krabka/capture/CaptureBroker.java` starts a real
 `mirror.gcr.io/apache/kafka:4.1.0` KRaft broker with streams groups enabled. The broker
 config sets `group.coordinator.rebalance.protocols=classic,consumer,streams`,
 `streams.version=1`, and the unstable api and feature versions. The file then runs the

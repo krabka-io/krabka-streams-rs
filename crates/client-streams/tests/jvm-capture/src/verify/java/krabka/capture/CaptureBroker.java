@@ -1,4 +1,4 @@
-package crabka.capture;
+package krabka.capture;
 
 import org.apache.kafka.clients.consumer.internals.StreamsRebalanceData;
 import org.apache.kafka.common.serialization.Serdes;
@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * subtopologies. This is the topology the client really sent to the broker — used to
  * confirm the no-broker mechanism-A capture in {@link Capture} is byte-identical.
  *
- * <p>Run with {@code BOOTSTRAP} env var pointing at the broker (e.g. {@code crabka-broker:9092}).
+ * <p>Run with {@code BOOTSTRAP} env var pointing at the broker (e.g. {@code krabka-broker:9092}).
  */
 public final class CaptureBroker {
 

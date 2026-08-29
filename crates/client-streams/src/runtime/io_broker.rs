@@ -4,12 +4,12 @@
 use std::{collections::HashMap, sync::Arc};
 
 use bytes::Bytes;
-use crabka_client_core::{
+use krabka_client_core::{
     Client, ClientDnsTimeout, ClientFrameMax, ConnectionDispatchQueueCapacity,
     DEFAULT_FETCH_RESPONSE_MAX, FetchMinBytes, IsolatedFetch,
 };
-use crabka_client_producer::{Acks, Producer, ProducerError, ProducerRecord, RecordMetadata};
-use crabka_protocol::{
+use krabka_client_producer::{Acks, Producer, ProducerError, ProducerRecord, RecordMetadata};
+use krabka_protocol::{
     owned::{
         list_offsets_request::{ListOffsetsPartition, ListOffsetsRequest, ListOffsetsTopic},
         offset_commit_request::{
@@ -22,7 +22,7 @@ use crabka_protocol::{
     },
     primitives::uuid::Uuid as WireUuid,
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 use tokio::sync::{Mutex, oneshot};
 
 use crate::{
@@ -101,7 +101,7 @@ impl RecordFetcher for BrokerFetcher {
             .fetch_partition_with_isolation_on(route.leader_id, request)
             .await
         {
-            Err(crabka_client_core::ClientError::Server { error_code })
+            Err(krabka_client_core::ClientError::Server { error_code })
                 if is_stale_route_error(error_code) =>
             {
                 self.refresh_routes().await?;
@@ -210,7 +210,7 @@ fn route_for(
 }
 
 fn routes_from_metadata(
-    metadata: &crabka_protocol::owned::metadata_response::MetadataResponse,
+    metadata: &krabka_protocol::owned::metadata_response::MetadataResponse,
 ) -> HashMap<String, TopicRoute> {
     metadata
         .topics
@@ -356,7 +356,7 @@ pub(crate) struct BrokerTransactionalProducer {
     /// gap. It would need either an unsafe self-reference or a lifetime
     /// parameter, and that lifetime parameter would break the `'static`
     /// `Arc<dyn TransactionalProducer>` storage that holds this type.
-    txn: Mutex<Option<crabka_client_producer::OwnedTransaction>>,
+    txn: Mutex<Option<krabka_client_producer::OwnedTransaction>>,
 }
 
 #[async_trait::async_trait]
@@ -444,7 +444,7 @@ impl TransactionalProducer for BrokerTransactionalProducer {
         offsets: &[(String, i32, i64)],
         m: &StreamsGroupMeta,
     ) -> Result<(), StreamsClientError> {
-        let meta = crabka_client_consumer::ConsumerGroupMetadata {
+        let meta = krabka_client_consumer::ConsumerGroupMetadata {
             group_id: m.group.clone(),
             generation_id: m.generation,
             member_id: m.member.clone(),
@@ -943,10 +943,10 @@ mod tests {
     use std::sync::Arc;
 
     use bytes::Bytes;
-    use crabka_broker::{Broker, BrokerConfig};
-    use crabka_client_core::Client;
-    use crabka_client_producer::Producer;
-    use crabka_protocol::owned::{
+    use krabka_broker::{Broker, BrokerConfig};
+    use krabka_client_core::Client;
+    use krabka_client_producer::Producer;
+    use krabka_protocol::owned::{
         create_topics_request::{CreatableTopic, CreateTopicsRequest},
         metadata_response::{MetadataResponse, MetadataResponsePartition, MetadataResponseTopic},
     };
@@ -964,7 +964,7 @@ mod tests {
         },
     };
 
-    async fn boot() -> (crabka_broker::BrokerHandle, String, tempfile::TempDir) {
+    async fn boot() -> (krabka_broker::BrokerHandle, String, tempfile::TempDir) {
         let dir = tempfile::TempDir::new().unwrap();
         let broker = Broker::start(BrokerConfig::for_tests(dir.path().to_path_buf()))
             .await
@@ -995,7 +995,7 @@ mod tests {
 
     #[test]
     fn metadata_routes_include_only_usable_partition_leaders() {
-        let topic_id = crabka_protocol::primitives::uuid::Uuid([7; 16]);
+        let topic_id = krabka_protocol::primitives::uuid::Uuid([7; 16]);
         let metadata = MetadataResponse {
             topics: vec![MetadataResponseTopic {
                 name: Some("orders".into()),

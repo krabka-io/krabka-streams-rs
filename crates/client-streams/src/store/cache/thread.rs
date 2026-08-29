@@ -8,7 +8,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::store::cache::{entry::LruCacheEntry, named::NamedCache};
 

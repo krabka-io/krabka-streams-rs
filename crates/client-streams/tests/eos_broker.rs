@@ -1,6 +1,6 @@
 //! End-to-end exactly-once (EOS v2) broker integration test.
 //!
-//! The test boots an in-process Crabka broker whose transaction coordinator is
+//! The test boots an in-process Krabka broker whose transaction coordinator is
 //! already wired. It then runs a *stateful* counting `KafkaStreams` app under
 //! [`ProcessingGuarantee::ExactlyOnceV2`]. It proves three things end-to-end:
 //!
@@ -35,16 +35,16 @@
 
 use std::time::Duration;
 
-use crabka_broker::{Broker, BrokerConfig, BrokerHandle};
-use crabka_client_core::{
+use krabka_broker::{Broker, BrokerConfig, BrokerHandle};
+use krabka_client_core::{
     Client, Connection, ConnectionOptions, DEFAULT_FETCH_RESPONSE_MAX, FetchedRecord,
     IsolatedFetch, fetch_partition_with_isolation,
 };
-use crabka_client_streams::{
+use krabka_client_streams::{
     I64Serde, KafkaStreams, NodeHandle, ProcessingGuarantee, Processor, ProcessorContext, Record,
     StringSerde, Topology,
 };
-use crabka_protocol::owned::{
+use krabka_protocol::owned::{
     create_topics_request::{CreatableTopic, CreateTopicsRequest},
     offset_fetch_request::{
         OffsetFetchRequest, OffsetFetchRequestGroup, OffsetFetchRequestTopic,
@@ -109,11 +109,11 @@ async fn create_topic(client: &Client, topic: &str, partitions: i32) {
     );
 }
 
-async fn produce(producer: &crabka_client_producer::Producer, vals: &[&str]) {
+async fn produce(producer: &krabka_client_producer::Producer, vals: &[&str]) {
     for val in vals {
         drop(
             producer
-                .send(crabka_client_producer::ProducerRecord {
+                .send(krabka_client_producer::ProducerRecord {
                     topic: IN_TOPIC.into(),
                     partition: Some(0),
                     key: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
@@ -148,7 +148,7 @@ impl Processor<String, String, String, i64> for Counter {
     }
 }
 
-fn counting_topology(app_id: &str) -> crabka_client_streams::BuiltTopology {
+fn counting_topology(app_id: &str) -> krabka_client_streams::BuiltTopology {
     let mut topo = Topology::new();
     let src: NodeHandle<String, String> = topo.add_source("src", [IN_TOPIC]);
     let c = topo.add_processor("c", || Counter, [&src]);
@@ -217,10 +217,10 @@ async fn collect_committed(
                 topic_id,
                 partition: 0,
                 fetch_offset: next_offset,
-                max_wait: crabka_units::millis(500),
+                max_wait: krabka_units::millis(500),
                 max: DEFAULT_FETCH_RESPONSE_MAX,
-                partition_max: crabka_units::mebibytes(1),
-                fetch_min: crabka_client_core::FetchMinBytes::default(),
+                partition_max: krabka_units::mebibytes(1),
+                fetch_min: krabka_client_core::FetchMinBytes::default(),
                 isolation_level: READ_COMMITTED,
             },
         )
@@ -365,7 +365,7 @@ async fn eos_v2_atomic_output_and_restart_resume() {
     create_topic(&admin, OUT_TOPIC, 1).await;
 
     // 2. Produce ["a","a","b"] to `in`.
-    let producer = crabka_client_producer::Producer::builder()
+    let producer = krabka_client_producer::Producer::builder()
         .bootstrap(&bootstrap)
         .build()
         .await

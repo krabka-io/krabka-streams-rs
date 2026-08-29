@@ -11,7 +11,7 @@
 //! state store.
 use std::{any::Any, cell::RefCell, marker::PhantomData, rc::Rc, sync::Arc};
 
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 
 use crate::{
     dsl::{
@@ -1429,7 +1429,7 @@ fn mint_table_store<KS, VS>(
 #[cfg(test)]
 mod tests {
     use assert2::check;
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     #[test]
     fn versioned_table_handle_carries_retention() {

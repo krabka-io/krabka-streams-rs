@@ -1,5 +1,5 @@
 [package]
-name = "crabka-client-streams"
+name = "krabka-client-streams"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,23 +8,23 @@ rust-version.workspace = true
 description = "KIP-1071 Kafka Streams rebalance-protocol client for Apache Kafka in Rust"
 repository = "https://github.com/robot-head/crabka"
 homepage = "https://github.com/robot-head/crabka"
-documentation = "https://docs.rs/crabka-client-streams"
+documentation = "https://docs.rs/krabka-client-streams"
 readme = "README.md"
-keywords = ["kafka", "streams", "client", "crabka"]
+keywords = ["kafka", "streams", "client", "krabka"]
 categories = ["api-bindings", "network-programming"]
 
 [lints]
 workspace = true
 
 [dependencies]
-crabka-protocol = { version = "0.4.0", default-features = false }
+krabka-protocol = { version = "0.4.0", default-features = false }
 # Schema-registry serdes (Avro/Protobuf/JSON) are a first-class, always-on part
 # of the streams client — no feature gate.
-crabka-schema-serde = { version = "0.4.0", path = "../schema-serde", features = ["avro", "protobuf", "json"] }
-crabka-client-core = { version = "0.4.0" }
-crabka-client-consumer = { version = "0.4.0" }
-crabka-client-producer = { version = "0.4.0" }
-crabka-units = { workspace = true }
+krabka-schema-serde = { version = "0.4.0", features = ["avro", "protobuf", "json"] }
+krabka-client-core = { version = "0.4.0" }
+krabka-client-consumer = { version = "0.4.0" }
+krabka-client-producer = { version = "0.4.0" }
+krabka-units = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
@@ -76,11 +76,11 @@ required-features = ["polars", "arrow"]
 [dev-dependencies]
 assert2 = { workspace = true }
 apache-avro = { workspace = true, features = ["derive"] }
-crabka-broker = { version = "0.4.0", features = ["test-helpers"] }
+krabka-broker = { version = "0.4.0", features = ["test-helpers"] }
 # Dev-only path dependency. Keep the crates.io requirement on the released
 # minor line so `cargo publish` can package this crate even when release-plz
 # publishes dev-dependency-only workspace crates later in the same run.
-crabka-client-admin = { version = "0.4.0" }
+krabka-client-admin = { version = "0.4.0" }
 hex = { workspace = true }
 mutants = { workspace = true }
 prost = { workspace = true }

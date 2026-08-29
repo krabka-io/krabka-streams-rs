@@ -3,11 +3,11 @@
 //!
 //! Every ordering rule here matches the JVM 4.x client.
 
-use crabka_protocol::owned::{
+use krabka_protocol::owned::{
     common::streams_group_heartbeat_request::{key_value::KeyValue, topic_info::TopicInfo},
     streams_group_heartbeat_request::{CopartitionGroup, Subtopology, Topology},
 };
-use crabka_units::prelude::*;
+use krabka_units::prelude::*;
 use serde::Serialize;
 
 use super::grouping::GroupTopics;
@@ -34,7 +34,7 @@ fn repartition_topic_configs() -> Vec<KeyValue> {
         ("message.timestamp.type", "CreateTime".to_string()),
         (
             "retention.ms",
-            crabka_units::convert::wire::opt_time_to_millis_i64(None).to_string(),
+            krabka_units::convert::wire::opt_time_to_millis_i64(None).to_string(),
         ),
         (
             "segment.bytes",
@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn wire_topology_serializes_to_fixture_shape_with_topic_info() {
-        use crabka_protocol::owned::common::streams_group_heartbeat_request::key_value::KeyValue;
+        use krabka_protocol::owned::common::streams_group_heartbeat_request::key_value::KeyValue;
         // A subtopology whose changelog topic carries a config: exercises the
         // TopicInfo + KeyValue serde projection the stateless fixture omits.
         let proto = Topology {

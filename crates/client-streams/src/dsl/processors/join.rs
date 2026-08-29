@@ -107,7 +107,7 @@ mod tests {
     use std::{collections::VecDeque, marker::PhantomData};
 
     use assert2::check;
-    use crabka_units::prelude::*;
+    use krabka_units::prelude::*;
 
     use super::*;
     use crate::{

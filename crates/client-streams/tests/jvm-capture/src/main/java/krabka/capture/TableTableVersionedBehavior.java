@@ -1,4 +1,4 @@
-package crabka.capture;
+package krabka.capture;
 
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.StreamsBuilder;

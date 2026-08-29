@@ -2,18 +2,18 @@
 //!
 //! The test boots an in-process broker and seeds two IPC-`DataFrame` records to
 //! `in`. It then runs [`run_partition_once`] through test-local `RecordFetcher`
-//! and `RecordProducer` adapters. `crabka_client_core` backs the fetch adapter,
-//! and `crabka_client_producer` backs the produce adapter. The test then reads
+//! and `RecordProducer` adapters. `krabka_client_core` backs the fetch adapter,
+//! and `krabka_client_producer` backs the produce adapter. The test then reads
 //! `out` and asserts the filtered row count and the advanced next-offset.
 #![cfg(feature = "polars")]
 
 use std::time::Duration;
 
 use bytes::Bytes;
-use crabka_broker::{Broker, BrokerConfig, BrokerHandle};
-use crabka_client_core::{Client, Connection, ConnectionOptions, fetch_partition};
-use crabka_client_producer::{Producer, ProducerRecord};
-use crabka_client_streams::{
+use krabka_broker::{Broker, BrokerConfig, BrokerHandle};
+use krabka_client_core::{Client, Connection, ConnectionOptions, fetch_partition};
+use krabka_client_producer::{Producer, ProducerRecord};
+use krabka_client_streams::{
     StreamsClientError,
     columnar::{
         serde::polars::PolarsIpcSerde,
@@ -22,7 +22,7 @@ use crabka_client_streams::{
     processor::serde::Serde,
     runtime::io::{FetchBatch, FetchedRec, IsolationLevel, RecordFetcher, RecordProducer},
 };
-use crabka_protocol::{
+use krabka_protocol::{
     owned::{
         create_topics_request::{CreatableTopic, CreateTopicsRequest},
         update_features_request::{FeatureUpdateKey, UpdateFeaturesRequest},
@@ -161,7 +161,7 @@ impl RecordFetcher for BrokerFetchAdapter {
     }
 }
 
-/// Produces over a real `crabka_client_producer::Producer`.
+/// Produces over a real `krabka_client_producer::Producer`.
 struct BrokerProduceAdapter {
     producer: Producer,
 }

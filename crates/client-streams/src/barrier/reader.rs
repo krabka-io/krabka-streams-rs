@@ -29,7 +29,7 @@ use crate::{
 /// ```no_run
 /// use std::sync::Arc;
 ///
-/// use crabka_client_streams::{barrier::CutReader, runtime::RecordFetcher};
+/// use krabka_client_streams::{barrier::CutReader, runtime::RecordFetcher};
 ///
 /// # async fn read(fetcher: Arc<dyn RecordFetcher>) -> Result<(), Box<dyn std::error::Error>> {
 /// let mut reader = CutReader::new(fetcher);
