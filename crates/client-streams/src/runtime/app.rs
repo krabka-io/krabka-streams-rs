@@ -459,6 +459,7 @@ impl KafkaStreams {
             }
             let mut poll = tokio::time::interval(poll_interval.duration());
             let mut commit = tokio::time::interval(commit_interval.duration());
+            commit.tick().await;
             let tracker = membership.tracker();
             loop {
                 tokio::select! {
@@ -689,6 +690,13 @@ impl KafkaStreams {
         self.shutdown.cancel();
         let _ = self.handle.await;
         Ok(())
+    }
+
+    /// Stop the runtime without committing, aborting transactions, or leaving
+    /// the group. Tests use this to model an abruptly killed process.
+    pub async fn crash(self) {
+        self.handle.abort();
+        let _ = self.handle.await;
     }
 }
 

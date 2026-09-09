@@ -357,6 +357,15 @@ impl StreamsMembership {
     }
 }
 
+impl Drop for StreamsMembership {
+    fn drop(&mut self) {
+        if let Some(handle) = self.hb_handle.take() {
+            handle.abort();
+        }
+        self.shutdown.cancel();
+    }
+}
+
 impl StreamsMembership {
     /// The client-generated member id.
     #[must_use]
