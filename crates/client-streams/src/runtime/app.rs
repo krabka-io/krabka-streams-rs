@@ -690,6 +690,13 @@ impl KafkaStreams {
         let _ = self.handle.await;
         Ok(())
     }
+
+    /// Stop the runtime without committing, aborting transactions, or leaving
+    /// the group. Tests use this to model an abruptly killed process.
+    pub async fn crash(self) {
+        self.handle.abort();
+        let _ = self.handle.await;
+    }
 }
 
 #[cfg(test)]

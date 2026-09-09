@@ -56,6 +56,7 @@ use krabka_protocol::owned::{
 const IN_TOPIC: &str = "in";
 const OUT_TOPIC: &str = "out";
 const APP_ID: &str = "eos-count-app";
+const PRECOMMIT_APP_ID: &str = "eos-precommit-app";
 /// Kafka `Fetch.isolation_level` for `READ_COMMITTED`.
 const READ_COMMITTED: i8 = 1;
 
@@ -63,9 +64,14 @@ const READ_COMMITTED: i8 = 1;
 
 async fn boot() -> (BrokerHandle, String, tempfile::TempDir) {
     let dir = tempfile::TempDir::new().unwrap();
-    let broker = Broker::start(BrokerConfig::for_tests(dir.path().to_path_buf()))
-        .await
-        .unwrap();
+    let mut config = BrokerConfig::for_tests(dir.path().to_path_buf());
+    config.streams_group.session_timeout = Duration::from_secs(5);
+    config.streams_group.min_session_timeout = Duration::from_secs(1);
+    config.streams_group.max_session_timeout = Duration::from_secs(5);
+    config.streams_group.heartbeat_interval = Duration::from_secs(1);
+    config.streams_group.min_heartbeat_interval = Duration::from_secs(1);
+    config.streams_group.max_heartbeat_interval = Duration::from_secs(2);
+    let broker = Broker::start(config).await.unwrap();
     let bootstrap = broker.listen_addr().to_string();
     (broker, bootstrap, dir)
 }
@@ -157,12 +163,22 @@ fn counting_topology(app_id: &str) -> krabka_client_streams::BuiltTopology {
     topo.build(app_id).unwrap()
 }
 
-async fn eos_streams(bootstrap: &str) -> KafkaStreams {
+async fn eos_streams(bootstrap: &str, app_id: &str) -> KafkaStreams {
+    eos_streams_with_commit(bootstrap, app_id, Duration::from_secs(1)).await
+}
+
+async fn eos_streams_with_commit(
+    bootstrap: &str,
+    app_id: &str,
+    commit_interval: Duration,
+) -> KafkaStreams {
     KafkaStreams::builder()
         .bootstrap(bootstrap)
-        .application_id(APP_ID)
-        .topology(counting_topology(APP_ID))
+        .application_id(app_id)
+        .topology(counting_topology(app_id))
         .processing_guarantee(ProcessingGuarantee::ExactlyOnceV2)
+        .commit_interval(commit_interval)
+        .rebalance_timeout(Duration::from_secs(5))
         .build()
         .await
         .unwrap()
@@ -180,6 +196,16 @@ async fn collect_committed(
     bootstrap: &str,
     want: usize,
     start_offset: i64,
+) -> Vec<(String, i64)> {
+    collect(bootstrap, admin, want, start_offset, READ_COMMITTED).await
+}
+
+async fn collect(
+    bootstrap: &str,
+    admin: &Client,
+    want: usize,
+    start_offset: i64,
+    isolation_level: i8,
 ) -> Vec<(String, i64)> {
     let meta = admin.refresh_metadata().await.expect("metadata");
     let topic_id = meta
@@ -221,7 +247,7 @@ async fn collect_committed(
                 max: DEFAULT_FETCH_RESPONSE_MAX,
                 partition_max: krabka_units::mebibytes(1),
                 fetch_min: krabka_client_core::FetchMinBytes::default(),
-                isolation_level: READ_COMMITTED,
+                isolation_level,
             },
         )
         .await
@@ -257,13 +283,66 @@ async fn collect_committed(
     collected
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn eos_v2_recovers_an_abandoned_precommit_transaction() {
+    let (broker, bootstrap, _dir) = boot().await;
+    let admin = Client::builder()
+        .bootstrap(&bootstrap)
+        .client_id("admin-precommit")
+        .build()
+        .await
+        .unwrap();
+    finalize_streams_version(&admin).await;
+    create_topic(&admin, IN_TOPIC, 1).await;
+    create_topic(&admin, OUT_TOPIC, 1).await;
+    let producer = krabka_client_producer::Producer::builder()
+        .bootstrap(&bootstrap)
+        .build()
+        .await
+        .unwrap();
+    produce(&producer, &["a", "a", "b"]).await;
+
+    let victim =
+        eos_streams_with_commit(&bootstrap, PRECOMMIT_APP_ID, Duration::from_secs(30)).await;
+    tokio::time::timeout(
+        Duration::from_secs(20),
+        collect(&bootstrap, &admin, 3, 0, 0),
+    )
+    .await
+    .expect("the open transaction produced output before the crash");
+    victim.crash().await;
+
+    let recovered = eos_streams(&bootstrap, PRECOMMIT_APP_ID).await;
+    let committed = tokio::time::timeout(
+        Duration::from_secs(20),
+        collect_committed(&admin, &bootstrap, 3, 0),
+    )
+    .await
+    .expect("the replacement fenced and recovered the abandoned transaction within 20s");
+    assert_eq!(
+        committed,
+        vec![
+            ("a".to_owned(), 1),
+            ("a".to_owned(), 2),
+            ("b".to_owned(), 1),
+        ]
+    );
+    assert_eq!(
+        await_committed_source_offset(&admin, PRECOMMIT_APP_ID).await,
+        3
+    );
+
+    recovered.close().await.unwrap();
+    broker.shutdown().await;
+}
+
 /// Fetch the committed source offset for `(IN_TOPIC, 0)` from the streams
 /// application-id group with `OffsetFetch`.
 ///
 /// The request uses the v8+ `groups[]` and `topic_id` shape, which matches the
 /// runtime's own `BrokerOffsetStore`. This function returns `None` when no offset
 /// is committed yet.
-async fn committed_source_offset(admin: &Client) -> Option<i64> {
+async fn committed_source_offset(admin: &Client, app_id: &str) -> Option<i64> {
     let meta = admin.refresh_metadata().await.expect("metadata");
     let topic_id = meta
         .topics
@@ -277,7 +356,7 @@ async fn committed_source_offset(admin: &Client) -> Option<i64> {
     let resp = admin
         .send(OffsetFetchRequest {
             // Legacy fields (v0-7): kept for version-negotiation fallback.
-            group_id: APP_ID.to_string(),
+            group_id: app_id.to_string(),
             topics: Some(vec![OffsetFetchRequestTopic {
                 name: IN_TOPIC.to_string(),
                 partition_indexes: vec![0],
@@ -285,7 +364,7 @@ async fn committed_source_offset(admin: &Client) -> Option<i64> {
             }]),
             // v8+ groups[] shape (carries topic_id for v10).
             groups: vec![OffsetFetchRequestGroup {
-                group_id: APP_ID.to_string(),
+                group_id: app_id.to_string(),
                 topics: Some(vec![OffsetFetchRequestTopics {
                     name: IN_TOPIC.to_string(),
                     topic_id,
@@ -335,9 +414,9 @@ async fn committed_source_offset(admin: &Client) -> Option<i64> {
 /// offsets at the COMMIT marker. That marker lands just after the committed
 /// output becomes visible, so a short poll bridges that window and does not
 /// flake.
-async fn await_committed_source_offset(admin: &Client) -> i64 {
+async fn await_committed_source_offset(admin: &Client, app_id: &str) -> i64 {
     loop {
-        if let Some(off) = committed_source_offset(admin).await {
+        if let Some(off) = committed_source_offset(admin, app_id).await {
             return off;
         }
         // real-time wait (not a progress poll): left per the conservative directive for
@@ -373,7 +452,7 @@ async fn eos_v2_atomic_output_and_restart_resume() {
     produce(&producer, &["a", "a", "b"]).await;
 
     // 3. Start the stateful counting app under EXACTLY_ONCE_V2.
-    let streams = eos_streams(&bootstrap).await;
+    let streams = eos_streams(&bootstrap, APP_ID).await;
 
     // 4. Read `out` with READ_COMMITTED until 3 committed records are visible.
     let got = tokio::time::timeout(
@@ -411,6 +490,10 @@ async fn eos_v2_atomic_output_and_restart_resume() {
         "committed 'b' count must be [1]; got {got:?}"
     );
 
+    // The output commit is visible, but this process has not observed the
+    // committed source checkpoint yet. Kill it in that ambiguity window.
+    streams.crash().await;
+
     // 4b. Source-offset atomicity. The streams runtime folds the consumed source
     // offsets into the SAME transaction as the output (`AddOffsetsToTxn` +
     // `TxnOffsetCommit`), and the broker now materializes those transactional
@@ -421,7 +504,7 @@ async fn eos_v2_atomic_output_and_restart_resume() {
     // just after the committed output becomes visible.
     let source_off = tokio::time::timeout(
         Duration::from_secs(20),
-        await_committed_source_offset(&admin),
+        await_committed_source_offset(&admin, APP_ID),
     )
     .await
     .expect("committed source offset surfaced within 20s");
@@ -446,10 +529,14 @@ async fn eos_v2_atomic_output_and_restart_resume() {
     // `a→3`, proving BOTH no-reprocessing (committed input processed once across
     // the restart) AND that the restarted instance correctly fetches/processes/
     // commits genuinely new input.
-    streams.close().await.unwrap();
+    let producer = krabka_client_producer::Producer::builder()
+        .bootstrap(&bootstrap)
+        .build()
+        .await
+        .unwrap();
     produce(&producer, &["a"]).await;
 
-    let streams2 = eos_streams(&bootstrap).await;
+    let streams2 = eos_streams(&bootstrap, APP_ID).await;
 
     // Collect the FULL committed output from offset 0 (READ_COMMITTED) until the
     // 4th committed record appears. Reading from 0 is robust to the EOS control
@@ -460,13 +547,13 @@ async fn eos_v2_atomic_output_and_restart_resume() {
     // changelog, seek to the committed source offset, then fetch + process +
     // commit the one new record — several round-trips before `a→3` is committed.
     let after_restart = tokio::time::timeout(
-        Duration::from_secs(40),
+        Duration::from_secs(20),
         collect_committed(&admin, &bootstrap, 4, 0),
     )
     .await
     .expect(
         "restarted EOS streams must commit the 4th output record (a→3 from the new \
-         input) within 40s",
+         input) within 20s",
     );
 
     // The committed output must be EXACTLY the original three records PLUS the
