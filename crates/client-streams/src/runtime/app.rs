@@ -459,6 +459,7 @@ impl KafkaStreams {
             }
             let mut poll = tokio::time::interval(poll_interval.duration());
             let mut commit = tokio::time::interval(commit_interval.duration());
+            commit.tick().await;
             let tracker = membership.tracker();
             loop {
                 tokio::select! {

@@ -310,15 +310,28 @@ async fn eos_v2_recovers_an_abandoned_precommit_transaction() {
     )
     .await
     .expect("the open transaction produced output before the crash");
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(250),
+            collect_committed(&admin, &bootstrap, 1, 0),
+        )
+        .await
+        .is_err(),
+        "output committed before the configured commit interval"
+    );
+    assert_eq!(
+        committed_source_offset(&admin, PRECOMMIT_APP_ID).await,
+        None
+    );
     victim.crash().await;
 
     let recovered = eos_streams(&bootstrap, PRECOMMIT_APP_ID).await;
     let committed = tokio::time::timeout(
-        Duration::from_secs(20),
+        Duration::from_secs(40),
         collect_committed(&admin, &bootstrap, 3, 0),
     )
     .await
-    .expect("the replacement fenced and recovered the abandoned transaction within 20s");
+    .expect("the replacement fenced and recovered the abandoned transaction within 40s");
     assert_eq!(
         committed,
         vec![
