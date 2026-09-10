@@ -434,7 +434,7 @@ impl StreamsMembership {
 
         let (events_tx, events_rx) = mpsc::unbounded_channel();
         let join = loop {
-            let resp = coordinator::HeartbeatTransport::send_heartbeat(
+            let response = coordinator::HeartbeatTransport::send_heartbeat(
                 &client,
                 build_join_heartbeat(
                     &group_id,
@@ -445,7 +445,15 @@ impl StreamsMembership {
                     &topology,
                 ),
             )
-            .await?;
+            .await;
+            let resp = match response {
+                Ok(response) => response,
+                Err(error) if should_retry_coordinator_discovery(&error) => {
+                    tokio::time::sleep(join_retry_backoff.duration()).await;
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            };
             if let Some(delay) = join_retry_delay(resp.error_code, join_retry_backoff) {
                 tokio::time::sleep(delay).await;
                 continue;
