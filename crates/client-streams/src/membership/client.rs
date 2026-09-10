@@ -10,7 +10,8 @@
 use std::{sync::Arc, time::Duration};
 
 use krabka_client_core::{
-    Client, ClientDnsTimeout, ClientFrameMax, ConnectionDispatchQueueCapacity,
+    Client, ClientDnsTimeout, ClientError, ClientFrameMax, ConnectionDispatchQueueCapacity,
+    CoordinatorKeyType, build_find_coordinator, coordinator_endpoint,
 };
 use krabka_protocol::owned::streams_group_heartbeat_request::StreamsGroupHeartbeatRequest;
 use krabka_units::prelude::*;
@@ -29,6 +30,152 @@ use super::{
 use crate::{error::StreamsClientError, membership::assignment::resolve};
 
 const COORDINATOR_LOAD_IN_PROGRESS: i16 = 14;
+const COORDINATOR_NOT_AVAILABLE: i16 = 15;
+const NOT_COORDINATOR: i16 = 16;
+
+struct RoutingHeartbeatTransport {
+    bootstrap: Client,
+    coordinator: Mutex<Client>,
+    group_id: String,
+    client_id: String,
+    broker_dns_timeout: ClientDnsTimeout,
+    dispatch_queue_capacity: ConnectionDispatchQueueCapacity,
+    frame_max: ClientFrameMax,
+    security: Option<krabka_client_core::security::ClientSecurity>,
+}
+
+impl RoutingHeartbeatTransport {
+    async fn new(
+        bootstrap: &str,
+        group_id: &str,
+        client_id: &str,
+        broker_dns_timeout: ClientDnsTimeout,
+        dispatch_queue_capacity: ConnectionDispatchQueueCapacity,
+        frame_max: ClientFrameMax,
+        security: Option<krabka_client_core::security::ClientSecurity>,
+    ) -> Result<Self, ClientError> {
+        let bootstrap = Client::builder()
+            .bootstrap(bootstrap)
+            .client_id(client_id)
+            .dns_timeout(broker_dns_timeout.time())
+            .dispatch_queue_capacity(dispatch_queue_capacity.get())
+            .frame_max(frame_max.size())
+            .maybe_security(security.clone())
+            .build()
+            .await?;
+        let _ = bootstrap.refresh_metadata().await;
+        let coordinator = Self::discover(
+            &bootstrap,
+            group_id,
+            client_id,
+            broker_dns_timeout,
+            dispatch_queue_capacity,
+            frame_max,
+            security.clone(),
+        )
+        .await?;
+        Ok(Self {
+            bootstrap,
+            coordinator: Mutex::new(coordinator),
+            group_id: group_id.to_owned(),
+            client_id: client_id.to_owned(),
+            broker_dns_timeout,
+            dispatch_queue_capacity,
+            frame_max,
+            security,
+        })
+    }
+
+    async fn discover(
+        bootstrap: &Client,
+        group_id: &str,
+        client_id: &str,
+        broker_dns_timeout: ClientDnsTimeout,
+        dispatch_queue_capacity: ConnectionDispatchQueueCapacity,
+        frame_max: ClientFrameMax,
+        security: Option<krabka_client_core::security::ClientSecurity>,
+    ) -> Result<Client, ClientError> {
+        let response = bootstrap
+            .send(build_find_coordinator(group_id, CoordinatorKeyType::Group))
+            .await?;
+        let endpoint = coordinator_endpoint(group_id, response)?;
+        Client::builder()
+            .bootstrap(endpoint.address())
+            .client_id(client_id)
+            .dns_timeout(broker_dns_timeout.time())
+            .dispatch_queue_capacity(dispatch_queue_capacity.get())
+            .frame_max(frame_max.size())
+            .maybe_security(security)
+            .build()
+            .await
+    }
+
+    async fn rediscover(&self) -> Result<Client, ClientError> {
+        Self::discover(
+            &self.bootstrap,
+            &self.group_id,
+            &self.client_id,
+            self.broker_dns_timeout,
+            self.dispatch_queue_capacity,
+            self.frame_max,
+            self.security.clone(),
+        )
+        .await
+    }
+}
+
+#[async_trait::async_trait]
+impl coordinator::HeartbeatTransport for RoutingHeartbeatTransport {
+    async fn send_heartbeat(
+        &self,
+        request: StreamsGroupHeartbeatRequest,
+    ) -> Result<
+        krabka_protocol::owned::streams_group_heartbeat_response::StreamsGroupHeartbeatResponse,
+        ClientError,
+    > {
+        let first = self.coordinator.lock().await.send(request.clone()).await;
+        if !should_rediscover(&first) {
+            return first;
+        }
+        let coordinator = self.rediscover().await?;
+        let response = coordinator.send(request).await;
+        *self.coordinator.lock().await = coordinator;
+        response
+    }
+}
+
+fn should_rediscover(
+    result: &Result<
+        krabka_protocol::owned::streams_group_heartbeat_response::StreamsGroupHeartbeatResponse,
+        ClientError,
+    >,
+) -> bool {
+    matches!(
+        result,
+        Ok(response)
+            if response.error_code == COORDINATOR_NOT_AVAILABLE
+                || response.error_code == NOT_COORDINATOR
+    ) || matches!(
+        result,
+        Err(ClientError::Connect { .. }
+            | ClientError::Disconnected
+            | ClientError::Timeout(_)
+            | ClientError::Io(_))
+    )
+}
+
+fn should_retry_coordinator_discovery(error: &ClientError) -> bool {
+    matches!(
+        error,
+        ClientError::Server {
+            error_code: COORDINATOR_LOAD_IN_PROGRESS | COORDINATOR_NOT_AVAILABLE | NOT_COORDINATOR
+        } | ClientError::NoCoordinator { .. }
+            | ClientError::Connect { .. }
+            | ClientError::Disconnected
+            | ClientError::Timeout(_)
+            | ClientError::Io(_)
+    )
+}
 
 /// Default Client Streams rebalance timeout.
 pub const DEFAULT_STREAMS_REBALANCE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -132,7 +279,11 @@ impl Default for StreamsLeaveHeartbeatTimeout {
 }
 
 fn join_retry_delay(error_code: i16, backoff: StreamsJoinRetryBackoff) -> Option<Duration> {
-    (error_code == COORDINATOR_LOAD_IN_PROGRESS).then(|| backoff.duration())
+    matches!(
+        error_code,
+        COORDINATOR_LOAD_IN_PROGRESS | COORDINATOR_NOT_AVAILABLE | NOT_COORDINATOR
+    )
+    .then(|| backoff.duration())
 }
 
 /// Positive, whole-millisecond rebalance timeout representable on the Kafka wire.
@@ -261,28 +412,48 @@ impl StreamsMembership {
         tracing::Span::current().record("member_id", tracing::field::display(&member_id));
         let rebalance_timeout = Time::from_millis(i64::from(rebalance_timeout.milliseconds()));
 
-        let client = Client::builder()
-            .bootstrap(&bootstrap)
-            .client_id(client_id.clone())
-            .dns_timeout(broker_dns_timeout.time())
-            .dispatch_queue_capacity(dispatch_queue_capacity.get())
-            .frame_max(frame_max.size())
-            .maybe_security(security.clone())
-            .build()
-            .await?;
+        let client = loop {
+            match RoutingHeartbeatTransport::new(
+                &bootstrap,
+                &group_id,
+                &client_id,
+                broker_dns_timeout,
+                dispatch_queue_capacity,
+                frame_max,
+                security.clone(),
+            )
+            .await
+            {
+                Ok(client) => break client,
+                Err(error) if should_retry_coordinator_discovery(&error) => {
+                    tokio::time::sleep(join_retry_backoff.duration()).await;
+                }
+                Err(error) => return Err(error.into()),
+            }
+        };
 
         let (events_tx, events_rx) = mpsc::unbounded_channel();
         let join = loop {
-            let resp = client
-                .send(build_join_heartbeat(
+            let response = coordinator::HeartbeatTransport::send_heartbeat(
+                &client,
+                build_join_heartbeat(
                     &group_id,
                     &member_id,
                     &process_id,
                     instance_id.clone(),
                     rebalance_timeout,
                     &topology,
-                ))
-                .await?;
+                ),
+            )
+            .await;
+            let resp = match response {
+                Ok(response) => response,
+                Err(error) if should_retry_coordinator_discovery(&error) => {
+                    tokio::time::sleep(join_retry_backoff.duration()).await;
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            };
             if let Some(delay) = join_retry_delay(resp.error_code, join_retry_backoff) {
                 tokio::time::sleep(delay).await;
                 continue;
@@ -312,21 +483,12 @@ impl StreamsMembership {
             let _ = events_tx.send(StreamsEvent::Assigned(initial.clone()));
         }
 
-        let coordinator_client = Client::builder()
-            .bootstrap(&bootstrap)
-            .client_id(client_id.clone())
-            .dns_timeout(broker_dns_timeout.time())
-            .dispatch_queue_capacity(dispatch_queue_capacity.get())
-            .frame_max(frame_max.size())
-            .maybe_security(security.clone())
-            .build()
-            .await?;
         let shutdown = CancellationToken::new();
         // Shared epoch handle: the coordinator advances it each heartbeat; the
         // membership reads it for EOS `group_metadata()`.
         let member_epoch = Arc::new(Mutex::new(member_epoch_val));
         let state = CoordinatorState {
-            client: coordinator_client,
+            client,
             group_id: group_id.clone(),
             member_id: member_id.clone(),
             process_id,
@@ -511,15 +673,17 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use assert2::check;
+    use krabka_client_core::ClientError;
     use krabka_protocol::owned::streams_group_heartbeat_response::StreamsGroupHeartbeatResponse;
     use krabka_units::prelude::*;
     use tokio::sync::{Mutex, mpsc};
     use tokio_util::sync::CancellationToken;
 
     use super::{
-        COORDINATOR_LOAD_IN_PROGRESS, StreamsJoinRetryBackoff, StreamsLeaveHeartbeatTimeout,
-        StreamsRebalanceTimeout, build_join_heartbeat, heartbeat_interval, join_retry_delay,
-        map_error, should_emit_statuses,
+        COORDINATOR_LOAD_IN_PROGRESS, COORDINATOR_NOT_AVAILABLE, NOT_COORDINATOR,
+        StreamsJoinRetryBackoff, StreamsLeaveHeartbeatTimeout, StreamsRebalanceTimeout,
+        build_join_heartbeat, heartbeat_interval, join_retry_delay, map_error,
+        should_emit_statuses, should_rediscover, should_retry_coordinator_discovery,
     };
     use crate::{
         error::StreamsClientError, membership::types::TaskOffsetTracker, topology::Topology,
@@ -680,15 +844,57 @@ mod tests {
     }
 
     #[test]
-    fn join_retry_path_uses_configured_backoff_only_while_coordinator_loads() {
+    fn join_retry_path_uses_backoff_while_coordinator_loads_or_moves() {
         let backoff = StreamsJoinRetryBackoff::new(Duration::from_millis(37))
             .expect("positive whole milliseconds");
-        check!(
-            join_retry_delay(COORDINATOR_LOAD_IN_PROGRESS, backoff)
-                == Some(Duration::from_millis(37))
-        );
+        for code in [
+            COORDINATOR_LOAD_IN_PROGRESS,
+            COORDINATOR_NOT_AVAILABLE,
+            NOT_COORDINATOR,
+        ] {
+            check!(join_retry_delay(code, backoff) == Some(Duration::from_millis(37)));
+        }
         check!(join_retry_delay(0, backoff).is_none());
-        check!(join_retry_delay(15, backoff).is_none());
+        check!(join_retry_delay(17, backoff).is_none());
+    }
+
+    #[test]
+    fn coordinator_movement_and_transport_errors_trigger_rediscovery() {
+        for code in [COORDINATOR_NOT_AVAILABLE, NOT_COORDINATOR] {
+            check!(should_rediscover(&Ok(resp(code))));
+        }
+        check!(should_rediscover(&Err(ClientError::Disconnected)));
+        check!(!should_rediscover(&Ok(resp(0))));
+        check!(!should_rediscover(&Ok(resp(30))));
+        check!(!should_rediscover(&Err(ClientError::Server {
+            error_code: 30,
+        })));
+    }
+
+    #[test]
+    fn unavailable_coordinator_discovery_retries() {
+        for error in [
+            ClientError::Server {
+                error_code: COORDINATOR_LOAD_IN_PROGRESS,
+            },
+            ClientError::Server {
+                error_code: COORDINATOR_NOT_AVAILABLE,
+            },
+            ClientError::Server {
+                error_code: NOT_COORDINATOR,
+            },
+            ClientError::NoCoordinator {
+                key: "streams-group".into(),
+            },
+        ] {
+            check!(should_retry_coordinator_discovery(&error));
+        }
+        check!(!should_retry_coordinator_discovery(&ClientError::Server {
+            error_code: 30,
+        }));
+        check!(should_retry_coordinator_discovery(
+            &ClientError::Disconnected
+        ));
     }
 
     #[test]

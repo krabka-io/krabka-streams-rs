@@ -101,9 +101,7 @@ impl RecordFetcher for BrokerFetcher {
             .fetch_partition_with_isolation_on(route.leader_id, request)
             .await
         {
-            Err(krabka_client_core::ClientError::Server { error_code })
-                if is_stale_route_error(error_code) =>
-            {
+            Err(error) if should_refresh_fetch_route(&error) => {
                 self.refresh_routes().await?;
                 let route = self.cached_route(topic, partition).await?;
                 self.client
@@ -239,6 +237,20 @@ fn missing_topic(topic: &str) -> StreamsClientError {
 
 fn is_stale_route_error(error_code: i16) -> bool {
     matches!(error_code, 3 | 5 | 6 | 100)
+}
+
+fn should_refresh_fetch_route(error: &krabka_client_core::ClientError) -> bool {
+    matches!(
+        error,
+        krabka_client_core::ClientError::Server { error_code }
+            if is_stale_route_error(*error_code)
+    ) || matches!(
+        error,
+        krabka_client_core::ClientError::Connect { .. }
+            | krabka_client_core::ClientError::Disconnected
+            | krabka_client_core::ClientError::Timeout(_)
+            | krabka_client_core::ClientError::Io(_)
+    )
 }
 
 // ─── BrokerProducer ───────────────────────────────────────────────────────────
@@ -944,7 +956,7 @@ mod tests {
 
     use bytes::Bytes;
     use krabka_broker::{Broker, BrokerConfig};
-    use krabka_client_core::Client;
+    use krabka_client_core::{Client, ClientError};
     use krabka_client_producer::Producer;
     use krabka_protocol::owned::{
         create_topics_request::{CreatableTopic, CreateTopicsRequest},
@@ -954,7 +966,7 @@ mod tests {
 
     use super::{
         BrokerOffsetStore, BrokerTransactionalProducer, is_stale_route_error, route_for,
-        routes_from_metadata,
+        routes_from_metadata, should_refresh_fetch_route,
     };
     use crate::{
         error::StreamsClientError,
@@ -1032,13 +1044,23 @@ mod tests {
     }
 
     #[test]
-    fn stale_partition_routes_refresh_only_for_metadata_errors() {
+    fn stale_partition_routes_refresh_after_leader_or_transport_failure() {
         for code in [3, 5, 6, 100] {
             assert2::assert!(is_stale_route_error(code), "code {code}");
+            assert2::assert!(should_refresh_fetch_route(&ClientError::Server {
+                error_code: code,
+            }));
         }
         for code in [0, 1, 29, 45] {
             assert2::assert!(!is_stale_route_error(code), "code {code}");
+            assert2::assert!(!should_refresh_fetch_route(&ClientError::Server {
+                error_code: code,
+            }));
         }
+        assert2::assert!(should_refresh_fetch_route(&ClientError::Disconnected));
+        assert2::assert!(should_refresh_fetch_route(&ClientError::Timeout(
+            krabka_units::secs(1)
+        )));
     }
 
     /// Round-trip test: `committed` returns `None` before any commit, and
