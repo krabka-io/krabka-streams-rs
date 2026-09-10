@@ -170,6 +170,10 @@ fn should_retry_coordinator_discovery(error: &ClientError) -> bool {
         ClientError::Server {
             error_code: COORDINATOR_LOAD_IN_PROGRESS | COORDINATOR_NOT_AVAILABLE | NOT_COORDINATOR
         } | ClientError::NoCoordinator { .. }
+            | ClientError::Connect { .. }
+            | ClientError::Disconnected
+            | ClientError::Timeout(_)
+            | ClientError::Io(_)
     )
 }
 
@@ -880,6 +884,9 @@ mod tests {
         check!(!should_retry_coordinator_discovery(&ClientError::Server {
             error_code: 30,
         }));
+        check!(should_retry_coordinator_discovery(
+            &ClientError::Disconnected
+        ));
     }
 
     #[test]
