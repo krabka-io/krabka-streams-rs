@@ -2,6 +2,7 @@
 //! wire bytes.
 //!
 //! Run it with `cargo run -p krabka-client-streams --example format_json`.
+use assert2::assert;
 use krabka_client_streams::{SchemaSerde, processor::serde::Serde};
 use krabka_schema_serde::{
     RegistryClient,
@@ -37,6 +38,6 @@ fn main() {
     let bytes = serde.serialize("orders.json", &event);
     let back: OrderEvent = serde.deserialize("orders.json", &bytes).unwrap();
     // docs:end json-roundtrip
-    assert_eq!(back, event);
+    assert!(back == event);
     println!("format_json: OK ({} bytes)", bytes.len());
 }

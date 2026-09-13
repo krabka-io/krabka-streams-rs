@@ -175,6 +175,93 @@ def crate_binary(name, crate_root, lib, tests = True, **kwargs):
             deps = all_crate_deps(normal_dev = True),
         )
 
+def crate_feature_library(name, features, deps):
+    """A second `rust_library` of this package's crate, with optional features on.
+
+    `crate.from_cargo` resolves each workspace member with its default features
+    only. For a feature that is off by default, `DEP_DATA` has neither the
+    feature name in `crate_features` nor the optional dependencies it enables in
+    `deps`. The `@crates` hub still has a target for each optional dependency,
+    because `Cargo.lock` lists it. So the caller names the features and the
+    dependencies behind them, as the crate's `[features]` table does, and the
+    library that `crate_library` builds keeps Cargo's default feature set.
+
+    A crate with a `build.rs` is not supported. `crate_library` wires the build
+    script, and this variant does not.
+
+    Args:
+      name: the target name, e.g. `client-streams_polars`.
+      features: the Cargo features to turn on.
+      deps: the `@crates` labels of the optional dependencies those features
+        enable.
+    """
+    rust_library(
+        name = name,
+        srcs = native.glob(
+            ["src/**/*.rs"],
+            exclude = ["src/bin/**"],
+        ),
+        aliases = _aliases(["deps"]),
+        crate_features = _features() + features,
+        crate_name = crate_name(),
+        edition = edition(),
+        rustc_flags = WORKSPACE_RUSTC_FLAGS,
+        deps = all_crate_deps(normal = True) + deps,
+    )
+
+    # The feature-gated modules are code that the default library does not
+    # compile, so they get their own clippy gate.
+    clippy_test(
+        name = name + "_clippy",
+        srcs = [":" + name],
+    )
+
+def crate_example(name, lib, compile_data = None, deps = None):
+    """Build a self-asserting Cargo example and run it as a test.
+
+    Cargo compiles an example only on `cargo build --examples` or `cargo test`,
+    and this repository's gate is Bazel. Without a target here the example is
+    never compiled, and an example that asserts its own output is never run.
+
+    The target is a `rust_test` with the example as its crate root and no libtest
+    harness. The test binary is the example's own `main`, so `bazel test` runs it
+    and fails when it panics or exits non-zero. A `rust_binary` with an `sh_test`
+    around it would compile the same code and add a wrapper script that does
+    nothing but run it.
+
+    A Cargo example links the crate's normal and dev dependencies, so this target
+    does too.
+
+    Args:
+      name: the example's file stem, so `format_json` for
+        `examples/format_json.rs`. `bazel run` and `bazel test` both take it.
+      lib: the library target in this package that the example links. For an
+        example with `required-features`, a `crate_feature_library` with those
+        features.
+      compile_data: files the example reaches with `include!`/`include_bytes!`.
+      deps: extra dependency labels, e.g. an optional dependency that the
+        example names directly.
+    """
+    crate_root = "examples/%s.rs" % name
+    rust_test(
+        name = name,
+        srcs = [crate_root],
+        crate_root = crate_root,
+        aliases = _aliases(["deps", "dev_deps"]),
+        compile_data = compile_data or [],
+        crate_features = _features(),
+        edition = edition(),
+        rustc_flags = WORKSPACE_RUSTC_FLAGS,
+        use_libtest_harness = False,
+        deps = all_crate_deps(normal = True, normal_dev = True) + [lib] + (deps or []),
+    )
+
+    # Clippy as a test, the same gate `crate_library` puts on the library.
+    clippy_test(
+        name = name + "_clippy",
+        srcs = [":" + name],
+    )
+
 def crate_tests(
         lib,
         data = None,

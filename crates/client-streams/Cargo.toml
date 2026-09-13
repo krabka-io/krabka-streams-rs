@@ -81,6 +81,11 @@ krabka-broker = { version = "0.4.0", features = ["test-helpers"] }
 # minor line so `cargo publish` can package this crate even when release-plz
 # publishes dev-dependency-only workspace crates later in the same run.
 krabka-client-admin = { version = "0.4.0" }
+# The in-process Schema Registry that the `format_pipeline` example boots. The
+# crate is not published, so it has no crates.io version. It comes from the
+# same revision as the `krabka-schema-serde` patch in the workspace manifest.
+# `cargo publish` drops a dev dependency that has no version.
+krabka-schema-registry = { git = "https://github.com/krabka-io/krabka-schema-registry", rev = "ee9c3933fb1d71735846e7e5e33ea6ab3a694dc5" }
 hex = { workspace = true }
 mutants = { workspace = true }
 prost = { workspace = true }
