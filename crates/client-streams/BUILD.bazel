@@ -1,4 +1,4 @@
-load("//bazel:defs.bzl", "crate_library", "crate_tests")
+load("//bazel:defs.bzl", "crate_example", "crate_feature_library", "crate_library", "crate_tests")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -16,4 +16,61 @@ crate_tests(
     ]),
     data = glob(["tests/testdata/**"]),
     lib = "client-streams",
+)
+
+# The library again, once for each `required-features` set of an example below.
+# The labels are the optional dependencies that the `[features]` table in
+# Cargo.toml enables for those features.
+crate_feature_library(
+    name = "client-streams_arrow",
+    features = ["arrow"],
+    deps = [
+        "@crates//:arrow",
+        "@crates//:serde_json",
+    ],
+)
+
+crate_feature_library(
+    name = "client-streams_arrow_polars",
+    features = [
+        "arrow",
+        "polars",
+    ],
+    deps = [
+        "@crates//:arrow",
+        "@crates//:polars",
+        "@crates//:polars-arrow",
+        "@crates//:serde_json",
+    ],
+)
+
+# The self-asserting examples. Each one is a test: it panics when its own
+# assertions fail. `bazel run //crates/client-streams:format_json` runs one as
+# `cargo run --example format_json` does.
+crate_example(
+    name = "format_json",
+    lib = ":client-streams",
+)
+
+crate_example(
+    name = "format_dsl",
+    compile_data = glob(["examples/gen/**"]),
+    lib = ":client-streams",
+)
+
+crate_example(
+    name = "format_arrow",
+    lib = ":client-streams_arrow",
+    deps = ["@crates//:arrow"],
+)
+
+# Boots an in-process broker and Schema Registry on loopback ports.
+crate_example(
+    name = "format_pipeline",
+    compile_data = glob(["examples/gen/**"]),
+    lib = ":client-streams_arrow_polars",
+    deps = [
+        "@crates//:arrow",
+        "@crates//:polars",
+    ],
 )

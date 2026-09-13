@@ -6,12 +6,13 @@
 //!
 //! Run: `cargo run -p krabka-client-streams --example format_pipeline --features polars,arrow`
 
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 
 use ::arrow::{
     array::{Int64Array, StringArray},
     datatypes::{DataType as ArrowDataType, Field, Schema as ArrowSchema},
 };
+use assert2::assert;
 use bytes::Bytes;
 use krabka_broker::{Broker, BrokerConfig, BrokerHandle};
 use krabka_client_admin::{AdminClient, CreateTopicSpec};
@@ -411,11 +412,11 @@ async fn main() {
         by_user.insert(s.user.clone(), s);
     }
     let alice = by_user.get("alice").expect("alice summary");
-    assert_eq!(alice.total_cents, 850, "alice total_cents");
-    assert_eq!(alice.order_count, 2, "alice order_count");
+    assert!(alice.total_cents == 850, "alice total_cents");
+    assert!(alice.order_count == 2, "alice order_count");
     let bob = by_user.get("bob").expect("bob summary");
-    assert_eq!(bob.total_cents, 900, "bob total_cents");
-    assert_eq!(bob.order_count, 1, "bob order_count");
+    assert!(bob.total_cents == 900, "bob total_cents");
+    assert!(bob.order_count == 1, "bob order_count");
     // docs:end assert
 
     boot.cancel.cancel();

@@ -6,6 +6,7 @@ use arrow::{
     array::{Int64Array, RecordBatch, StringArray},
     datatypes::{DataType, Field, Schema},
 };
+use assert2::assert;
 use krabka_client_streams::{columnar::serde::arrow::ArrowIpcSerde, processor::serde::Serde};
 
 fn main() {
@@ -25,7 +26,7 @@ fn main() {
     let bytes = ArrowIpcSerde.serialize("orders.arrow", &batch);
     let back = ArrowIpcSerde.deserialize("orders.arrow", &bytes).unwrap();
     // docs:end arrow-roundtrip
-    assert_eq!(back.num_rows(), 2);
-    assert_eq!(back, batch);
+    assert!(back.num_rows() == 2);
+    assert!(back == batch);
     println!("format_arrow: OK ({} bytes)", bytes.len());
 }
