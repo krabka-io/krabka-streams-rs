@@ -6,6 +6,12 @@
 //! reconciliation. It rejoins from epoch 0 on a fence, and it sends a leave
 //! heartbeat with `member_epoch = -1` on shutdown. It emits every meaningful
 //! change as a [`StreamsEvent`].
+//!
+//! The requests follow Kafka's `StreamsGroupHeartbeatRequestManager` and pass
+//! the checks of `GroupCoordinatorService.throwIfStreamsGroupHeartbeatRequestIsInvalid`.
+//! A join at epoch 0 carries the topology and three empty task lists. A later
+//! heartbeat carries all three task lists when the owned tasks differ from the
+//! last lists sent, and none of them otherwise.
 
 use std::sync::Arc;
 
@@ -34,6 +40,9 @@ use crate::topology::BuiltTopology;
 const FENCED_MEMBER_EPOCH: i16 = 110;
 const UNKNOWN_MEMBER_ID: i16 = 25;
 const STALE_MEMBER_EPOCH: i16 = 113;
+
+/// `LEAVE_GROUP_MEMBER_EPOCH`: the epoch of a member that leaves the group.
+const LEAVE_GROUP_MEMBER_EPOCH: i32 = -1;
 
 /// The heartbeat RPC that the coordinator depends on. The real [`Client`]
 /// implements it. Tests inject a fake, so the loop runs without a broker.
@@ -67,12 +76,17 @@ pub(crate) struct CoordinatorState<T: HeartbeatTransport> {
     pub rebalance_timeout: Time,
     pub topology: Arc<BuiltTopology>,
     pub member_epoch: Arc<Mutex<i32>>,
-    /// Owned tasks last adopted, echoed back as `active_tasks` next heartbeat.
+    /// Owned tasks last adopted, echoed back as `active_tasks`.
     pub owned_active: Arc<Mutex<Vec<RespTaskIds>>>,
-    /// Owned standby tasks last adopted, echoed back next heartbeat.
+    /// Owned standby tasks last adopted, echoed back as `standby_tasks`.
     pub owned_standby: Arc<Mutex<Vec<RespTaskIds>>>,
-    /// Owned warmup tasks last adopted, echoed back next heartbeat.
+    /// Owned warmup tasks last adopted, echoed back as `warmup_tasks`.
     pub owned_warmup: Arc<Mutex<Vec<RespTaskIds>>>,
+    /// The task lists that the last steady-state heartbeat carried. It is
+    /// `None` before the first one and after a failed heartbeat, so the next
+    /// heartbeat carries the lists again. This is Kafka's
+    /// `HeartbeatState.LastSentFields`.
+    pub last_sent_tasks: Mutex<Option<TaskLists>>,
     /// Tracker containing current and end offsets of all tasks.
     pub tracker: Arc<Mutex<TaskOffsetTracker>>,
     pub heartbeat_interval: Time,
@@ -89,6 +103,74 @@ enum Outcome {
     Transient,
 }
 
+/// The active, standby, and warmup task lists of one heartbeat.
+///
+/// Kafka refuses a heartbeat that sends some of the three lists but not all of
+/// them ("If one task-type is non-null, all must be non-null."), so they travel
+/// as one value.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct TaskLists {
+    active: Vec<ReqTaskIds>,
+    standby: Vec<ReqTaskIds>,
+    warmup: Vec<ReqTaskIds>,
+}
+
+impl TaskLists {
+    /// The request fields `active_tasks`, `standby_tasks`, and
+    /// `warmup_tasks`: all three present, or all three absent.
+    fn into_fields(lists: Option<Self>) -> [Option<Vec<ReqTaskIds>>; 3] {
+        match lists {
+            Some(lists) => [Some(lists.active), Some(lists.standby), Some(lists.warmup)],
+            None => [None, None, None],
+        }
+    }
+}
+
+/// The join heartbeat at epoch 0, as Kafka's `StreamsGroupHeartbeatRequestManager`
+/// builds it for a member in the `JOINING` state.
+///
+/// Kafka refuses a join that omits the rebalance timeout or the topology, and
+/// one whose task lists are absent or non-empty (`ActiveTasks must be empty
+/// when (re-)joining.`), so the join sends three empty lists.
+pub(super) fn join_heartbeat(
+    group_id: &str,
+    member_id: &str,
+    process_id: &str,
+    instance_id: Option<String>,
+    rebalance_timeout: Time,
+    topology: &BuiltTopology,
+) -> StreamsGroupHeartbeatRequest {
+    StreamsGroupHeartbeatRequest {
+        group_id: group_id.to_string(),
+        member_id: member_id.to_string(),
+        member_epoch: 0,
+        process_id: Some(process_id.to_string()),
+        instance_id,
+        // The generated request field is raw `int32` milliseconds.
+        rebalance_timeout_ms: rebalance_timeout.millis_i32(),
+        topology: Some(topology.to_wire_request()),
+        active_tasks: Some(Vec::new()),
+        standby_tasks: Some(Vec::new()),
+        warmup_tasks: Some(Vec::new()),
+        ..Default::default()
+    }
+}
+
+/// The leave heartbeat sent on shutdown. Kafka's `StreamsMembershipManager`
+/// leaves with `LEAVE_GROUP_MEMBER_EPOCH` and keeps the instance id, and it
+/// sends no task lists and no topology.
+fn leave_heartbeat<T: HeartbeatTransport>(
+    state: &CoordinatorState<T>,
+) -> StreamsGroupHeartbeatRequest {
+    StreamsGroupHeartbeatRequest {
+        group_id: state.group_id.clone(),
+        member_id: state.member_id.clone(),
+        member_epoch: LEAVE_GROUP_MEMBER_EPOCH,
+        instance_id: state.instance_id.clone(),
+        ..Default::default()
+    }
+}
+
 /// Drive the loop until `shutdown` fires, then leave.
 #[tracing::instrument(
     name = "streams.coordinator.run",
@@ -102,7 +184,6 @@ pub(crate) async fn run<T: HeartbeatTransport>(
 ) {
     let mut ticker = tokio::time::interval(state.heartbeat_interval.to_std());
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut rejoining = false;
 
     loop {
         tokio::select! {
@@ -111,70 +192,43 @@ pub(crate) async fn run<T: HeartbeatTransport>(
         }
         tokio::select! {
             () = shutdown.cancelled() => break,
-            outcome = heartbeat_once(&state, rejoining) => match outcome {
-                Outcome::Ok => rejoining = false,
-                Outcome::Transient => {}
+            outcome = heartbeat_once(&state) => match outcome {
+                Outcome::Ok | Outcome::Transient => {}
                 Outcome::Rejoin => {
-                    *state.member_epoch.lock().await = 0;
-                    state.owned_active.lock().await.clear();
-                    state.owned_standby.lock().await.clear();
-                    state.owned_warmup.lock().await.clear();
-                    {
-                        let mut lock = state.tracker.lock().await;
-                        lock.task_offsets.clear();
-                        lock.task_end_offsets.clear();
-                    }
-                    *state.last_assignment.lock().await = StreamsAssignment::default();
-                    rejoining = true;
+                    reset_for_rejoin(&state).await;
                     let _ = state.events.send(StreamsEvent::Fenced);
                 }
             },
         }
     }
 
-    let leave = state.client.send_heartbeat(StreamsGroupHeartbeatRequest {
-        group_id: state.group_id.clone(),
-        member_id: state.member_id.clone(),
-        member_epoch: -1,
-        ..Default::default()
-    });
+    let leave = state.client.send_heartbeat(leave_heartbeat(&state));
     let _ = tokio::time::timeout(state.leave_heartbeat_timeout.to_std(), leave).await;
+}
+
+/// Drop the epoch, the owned tasks, and the offsets, so the next heartbeat
+/// joins again from epoch 0.
+async fn reset_for_rejoin<T: HeartbeatTransport>(state: &CoordinatorState<T>) {
+    *state.member_epoch.lock().await = 0;
+    state.owned_active.lock().await.clear();
+    state.owned_standby.lock().await.clear();
+    state.owned_warmup.lock().await.clear();
+    {
+        let mut lock = state.tracker.lock().await;
+        lock.task_offsets.clear();
+        lock.task_end_offsets.clear();
+    }
+    *state.last_assignment.lock().await = StreamsAssignment::default();
 }
 
 #[tracing::instrument(
     name = "streams.coordinator.heartbeat_once",
     level = "debug",
     skip_all,
-    fields(group_id = %state.group_id, member_id = %state.member_id, rejoining),
+    fields(group_id = %state.group_id, member_id = %state.member_id),
 )]
-async fn heartbeat_once<T: HeartbeatTransport>(
-    state: &CoordinatorState<T>,
-    rejoining: bool,
-) -> Outcome {
+async fn heartbeat_once<T: HeartbeatTransport>(state: &CoordinatorState<T>) -> Outcome {
     let epoch = *state.member_epoch.lock().await;
-    let owned = state.owned_active.lock().await.clone();
-    let topology = if rejoining || epoch == 0 {
-        Some(state.topology.to_wire_request())
-    } else {
-        None
-    };
-    let active_tasks = if owned.is_empty() {
-        None
-    } else {
-        Some(owned.iter().map(resp_to_req).collect())
-    };
-    let owned_standby = state.owned_standby.lock().await.clone();
-    let standby_tasks = if owned_standby.is_empty() {
-        None
-    } else {
-        Some(owned_standby.iter().map(resp_to_req).collect())
-    };
-    let owned_warmup = state.owned_warmup.lock().await.clone();
-    let warmup_tasks = if owned_warmup.is_empty() {
-        None
-    } else {
-        Some(owned_warmup.iter().map(resp_to_req).collect())
-    };
 
     let (task_offsets, task_end_offsets) = {
         let tracker = state.tracker.lock().await;
@@ -205,22 +259,93 @@ async fn heartbeat_once<T: HeartbeatTransport>(
         )
     };
 
-    let req = StreamsGroupHeartbeatRequest {
-        group_id: state.group_id.clone(),
-        member_id: state.member_id.clone(),
-        member_epoch: epoch,
-        process_id: Some(state.process_id.clone()),
-        instance_id: state.instance_id.clone(),
-        rebalance_timeout_ms: state.rebalance_timeout.millis_i32(),
-        topology,
-        active_tasks,
-        standby_tasks,
-        warmup_tasks,
-        task_offsets,
-        task_end_offsets,
-        ..Default::default()
+    let req = if epoch == 0 {
+        // The first heartbeat after a join reports the owned tasks.
+        *state.last_sent_tasks.lock().await = None;
+        StreamsGroupHeartbeatRequest {
+            task_offsets,
+            task_end_offsets,
+            ..join_heartbeat(
+                &state.group_id,
+                &state.member_id,
+                &state.process_id,
+                state.instance_id.clone(),
+                state.rebalance_timeout,
+                &state.topology,
+            )
+        }
+    } else {
+        let [active_tasks, standby_tasks, warmup_tasks] =
+            TaskLists::into_fields(changed_task_lists(state).await);
+        StreamsGroupHeartbeatRequest {
+            group_id: state.group_id.clone(),
+            member_id: state.member_id.clone(),
+            member_epoch: epoch,
+            process_id: Some(state.process_id.clone()),
+            instance_id: state.instance_id.clone(),
+            rebalance_timeout_ms: state.rebalance_timeout.millis_i32(),
+            active_tasks,
+            standby_tasks,
+            warmup_tasks,
+            task_offsets,
+            task_end_offsets,
+            ..Default::default()
+        }
     };
 
+    let outcome = send_and_adopt(state, req).await;
+    if !matches!(outcome, Outcome::Ok) {
+        // Kafka's `HeartbeatState.reset` on every failed heartbeat: the next
+        // heartbeat reports the owned tasks again.
+        *state.last_sent_tasks.lock().await = None;
+    }
+    outcome
+}
+
+/// The owned tasks, when they differ from the task lists that the last
+/// steady-state heartbeat carried; `None` when that heartbeat already carried
+/// them. Records the lists it returns as sent.
+async fn changed_task_lists<T: HeartbeatTransport>(
+    state: &CoordinatorState<T>,
+) -> Option<TaskLists> {
+    let owned = TaskLists {
+        active: state
+            .owned_active
+            .lock()
+            .await
+            .iter()
+            .map(resp_to_req)
+            .collect(),
+        standby: state
+            .owned_standby
+            .lock()
+            .await
+            .iter()
+            .map(resp_to_req)
+            .collect(),
+        warmup: state
+            .owned_warmup
+            .lock()
+            .await
+            .iter()
+            .map(resp_to_req)
+            .collect(),
+    };
+    let mut last_sent = state.last_sent_tasks.lock().await;
+    if last_sent.as_ref() == Some(&owned) {
+        None
+    } else {
+        *last_sent = Some(owned.clone());
+        Some(owned)
+    }
+}
+
+/// Send one heartbeat and adopt the epoch and the assignment of a successful
+/// response.
+async fn send_and_adopt<T: HeartbeatTransport>(
+    state: &CoordinatorState<T>,
+    req: StreamsGroupHeartbeatRequest,
+) -> Outcome {
     match state.client.send_heartbeat(req).await {
         Ok(r) if r.error_code == 0 => {
             *state.member_epoch.lock().await = r.member_epoch;
@@ -440,6 +565,7 @@ mod tests {
             owned_active: Arc::new(Mutex::new(Vec::new())),
             owned_standby: Arc::new(Mutex::new(Vec::new())),
             owned_warmup: Arc::new(Mutex::new(Vec::new())),
+            last_sent_tasks: Mutex::new(None),
             tracker: Arc::new(Mutex::new(TaskOffsetTracker::default())),
             heartbeat_interval: millis(1),
             leave_heartbeat_timeout: DEFAULT_STREAMS_LEAVE_HEARTBEAT_TIMEOUT.as_time(),
@@ -457,7 +583,7 @@ mod tests {
     async fn heartbeat_ok_adopts_epoch_and_emits_assignment() {
         let fake = FakeTransport::new(vec![ok_resp(9, vec![0, 1])]);
         let (st, mut rx) = state_with(fake);
-        let outcome = heartbeat_once(&st, false).await;
+        let outcome = heartbeat_once(&st).await;
         check!(matches!(outcome, Outcome::Ok));
         check!(*st.member_epoch.lock().await == 9);
         check!(matches!(rx.try_recv(), Ok(StreamsEvent::Assigned(_))));
@@ -470,7 +596,7 @@ mod tests {
         let (mut state, _rx) = state_with(fake);
         state.rebalance_timeout = secs(45);
 
-        check!(matches!(heartbeat_once(&state, false).await, Outcome::Ok));
+        check!(matches!(heartbeat_once(&state).await, Outcome::Ok));
         check!(sent.lock().unwrap()[0].rebalance_timeout_ms == 45_000);
     }
 
@@ -478,31 +604,28 @@ mod tests {
     async fn heartbeat_fenced_member_epoch_requests_rejoin() {
         let fake = FakeTransport::new(vec![err_resp(110)]);
         let (st, _rx) = state_with(fake);
-        check!(matches!(heartbeat_once(&st, false).await, Outcome::Rejoin));
+        check!(matches!(heartbeat_once(&st).await, Outcome::Rejoin));
     }
 
     #[tokio::test]
     async fn heartbeat_unknown_member_id_requests_rejoin() {
         let fake = FakeTransport::new(vec![err_resp(25)]);
         let (st, _rx) = state_with(fake);
-        check!(matches!(heartbeat_once(&st, false).await, Outcome::Rejoin));
+        check!(matches!(heartbeat_once(&st).await, Outcome::Rejoin));
     }
 
     #[tokio::test]
     async fn heartbeat_stale_member_epoch_requests_rejoin() {
         let fake = FakeTransport::new(vec![err_resp(113)]);
         let (st, _rx) = state_with(fake);
-        check!(matches!(heartbeat_once(&st, false).await, Outcome::Rejoin));
+        check!(matches!(heartbeat_once(&st).await, Outcome::Rejoin));
     }
 
     #[tokio::test]
     async fn heartbeat_unexpected_code_is_transient() {
         let fake = FakeTransport::new(vec![err_resp(99)]);
         let (st, _rx) = state_with(fake);
-        check!(matches!(
-            heartbeat_once(&st, false).await,
-            Outcome::Transient
-        ));
+        check!(matches!(heartbeat_once(&st).await, Outcome::Transient));
     }
 
     #[tokio::test]
@@ -518,20 +641,7 @@ mod tests {
             }
         }
         let (st, _rx) = state_with(ErrTransport);
-        check!(matches!(
-            heartbeat_once(&st, false).await,
-            Outcome::Transient
-        ));
-    }
-
-    #[tokio::test]
-    async fn heartbeat_sends_topology_when_rejoining() {
-        let fake = FakeTransport::new(vec![ok_resp(1, vec![])]);
-        let sent = fake.sent_arc();
-        let (st, _rx) = state_with(fake);
-        let _ = heartbeat_once(&st, true).await;
-        let sent = sent.lock().unwrap();
-        check!(sent[0].topology.is_some());
+        check!(matches!(heartbeat_once(&st).await, Outcome::Transient));
     }
 
     #[tokio::test]
@@ -540,7 +650,7 @@ mod tests {
         let sent = fake.sent_arc();
         let (st, _rx) = state_with(fake);
         *st.member_epoch.lock().await = 0;
-        let _ = heartbeat_once(&st, false).await;
+        let _ = heartbeat_once(&st).await;
         let sent = sent.lock().unwrap();
         check!(sent[0].topology.is_some());
     }
@@ -557,9 +667,291 @@ mod tests {
             partitions: vec![0, 1],
             ..Default::default()
         }];
-        let _ = heartbeat_once(&st, false).await;
+        let _ = heartbeat_once(&st).await;
         let sent = sent.lock().unwrap();
         check!(sent[0].active_tasks.is_some());
+    }
+
+    // ---------------------------------------------------------------------------
+    // Request shapes that Kafka accepts
+    // ---------------------------------------------------------------------------
+
+    /// The request checks of Kafka's
+    /// `GroupCoordinatorService.throwIfStreamsGroupHeartbeatRequestIsInvalid`
+    /// (Apache Kafka 4.1 through 4.3) that the shape of a heartbeat decides,
+    /// with Kafka's messages. `None` when Kafka accepts the request.
+    fn kafka_refusal(req: &StreamsGroupHeartbeatRequest) -> Option<&'static str> {
+        // `throwIfNotEmptyCollection` refuses a null list as well as a
+        // non-empty one.
+        let not_empty =
+            |tasks: &Option<Vec<ReqTaskIds>>| tasks.as_ref().is_none_or(|t| !t.is_empty());
+        if req.member_id.trim().is_empty() {
+            return Some("MemberId can't be empty.");
+        }
+        if req.group_id.trim().is_empty() {
+            return Some("GroupId can't be empty.");
+        }
+        if req
+            .instance_id
+            .as_deref()
+            .is_some_and(|id| id.trim().is_empty())
+        {
+            return Some("InstanceId can't be empty.");
+        }
+        if req.member_epoch == 0 {
+            if req.rebalance_timeout_ms == -1 {
+                return Some("RebalanceTimeoutMs must be provided in first request.");
+            }
+            if not_empty(&req.active_tasks) {
+                return Some("ActiveTasks must be empty when (re-)joining.");
+            }
+            if not_empty(&req.standby_tasks) {
+                return Some("StandbyTasks must be empty when (re-)joining.");
+            }
+            if not_empty(&req.warmup_tasks) {
+                return Some("WarmupTasks must be empty when (re-)joining.");
+            }
+            if req.topology.is_none() {
+                return Some("Topology must be non-null when (re-)joining.");
+            }
+        } else if req.member_epoch == -2 {
+            if req.instance_id.is_none() {
+                return Some("InstanceId can't be null.");
+            }
+        } else if req.member_epoch < -2 {
+            return Some("MemberEpoch must be greater than or equal to -2.");
+        }
+        let present = [
+            req.active_tasks.is_some(),
+            req.standby_tasks.is_some(),
+            req.warmup_tasks.is_some(),
+        ];
+        if present.contains(&true) && present.contains(&false) {
+            return Some("If one task-type is non-null, all must be non-null.");
+        }
+        if req.member_epoch != 0 && req.topology.is_some() {
+            return Some("Topology can only be provided when (re-)joining.");
+        }
+        None
+    }
+
+    fn task(subtopology_id: &str, partitions: Vec<i32>) -> ReqTaskIds {
+        ReqTaskIds {
+            subtopology_id: subtopology_id.into(),
+            partitions,
+            ..Default::default()
+        }
+    }
+
+    /// The join that `state_with` sends at epoch 0.
+    fn expected_join(instance_id: Option<&str>) -> StreamsGroupHeartbeatRequest {
+        StreamsGroupHeartbeatRequest {
+            group_id: "g".into(),
+            member_id: "m".into(),
+            member_epoch: 0,
+            process_id: Some("p".into()),
+            instance_id: instance_id.map(Into::into),
+            rebalance_timeout_ms: 30_000,
+            topology: Some(built().to_wire_request()),
+            active_tasks: Some(vec![]),
+            standby_tasks: Some(vec![]),
+            warmup_tasks: Some(vec![]),
+            ..Default::default()
+        }
+    }
+
+    /// A steady-state heartbeat of `state_with` at `epoch`.
+    fn expected_steady(epoch: i32, lists: Option<TaskLists>) -> StreamsGroupHeartbeatRequest {
+        let [active_tasks, standby_tasks, warmup_tasks] = TaskLists::into_fields(lists);
+        StreamsGroupHeartbeatRequest {
+            group_id: "g".into(),
+            member_id: "m".into(),
+            member_epoch: epoch,
+            process_id: Some("p".into()),
+            rebalance_timeout_ms: 30_000,
+            active_tasks,
+            standby_tasks,
+            warmup_tasks,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn kafka_refusal_matches_kafka_on_the_shapes_it_refuses() {
+        let cases = [
+            (
+                "join without task lists",
+                StreamsGroupHeartbeatRequest {
+                    active_tasks: None,
+                    standby_tasks: None,
+                    warmup_tasks: None,
+                    ..expected_join(None)
+                },
+                Some("ActiveTasks must be empty when (re-)joining."),
+            ),
+            (
+                "join with owned tasks",
+                StreamsGroupHeartbeatRequest {
+                    standby_tasks: Some(vec![task("0", vec![1])]),
+                    ..expected_join(None)
+                },
+                Some("StandbyTasks must be empty when (re-)joining."),
+            ),
+            (
+                "join without topology",
+                StreamsGroupHeartbeatRequest {
+                    topology: None,
+                    ..expected_join(None)
+                },
+                Some("Topology must be non-null when (re-)joining."),
+            ),
+            (
+                "join without rebalance timeout",
+                StreamsGroupHeartbeatRequest {
+                    rebalance_timeout_ms: -1,
+                    ..expected_join(None)
+                },
+                Some("RebalanceTimeoutMs must be provided in first request."),
+            ),
+            (
+                "heartbeat with only active tasks",
+                StreamsGroupHeartbeatRequest {
+                    active_tasks: Some(vec![task("0", vec![0])]),
+                    ..expected_steady(3, None)
+                },
+                Some("If one task-type is non-null, all must be non-null."),
+            ),
+            (
+                "heartbeat with topology",
+                StreamsGroupHeartbeatRequest {
+                    topology: Some(built().to_wire_request()),
+                    ..expected_steady(3, None)
+                },
+                Some("Topology can only be provided when (re-)joining."),
+            ),
+            (
+                "static leave without instance id",
+                expected_steady(-2, None),
+                Some("InstanceId can't be null."),
+            ),
+            (
+                "heartbeat without member id",
+                StreamsGroupHeartbeatRequest {
+                    member_id: " ".into(),
+                    ..expected_steady(3, None)
+                },
+                Some("MemberId can't be empty."),
+            ),
+            ("join", expected_join(None), None),
+            (
+                "heartbeat without task lists",
+                expected_steady(3, None),
+                None,
+            ),
+            (
+                "heartbeat with empty task lists",
+                expected_steady(3, Some(TaskLists::default())),
+                None,
+            ),
+        ];
+        for (name, req, refusal) in cases {
+            check!(kafka_refusal(&req) == refusal, "{name}");
+        }
+    }
+
+    #[test]
+    fn join_heartbeat_is_the_join_that_kafka_accepts() {
+        for instance_id in [None, Some("instance-1")] {
+            let req = join_heartbeat(
+                "g",
+                "m",
+                "p",
+                instance_id.map(Into::into),
+                secs(30),
+                &built(),
+            );
+            check!(req == expected_join(instance_id));
+            check!(kafka_refusal(&req) == None);
+        }
+    }
+
+    #[tokio::test]
+    async fn heartbeats_send_all_task_lists_on_join_and_change_and_none_otherwise() {
+        let active = |partitions: Vec<i32>| TaskLists {
+            active: vec![task("0", partitions)],
+            ..TaskLists::default()
+        };
+        let unchanged = StreamsGroupHeartbeatResponse {
+            member_epoch: 2,
+            heartbeat_interval_ms: 1,
+            ..Default::default()
+        };
+        // Each step: the response to the heartbeat that the step sends, and
+        // that heartbeat.
+        let steps = [
+            ("join", ok_resp(1, vec![0, 1]), expected_join(None)),
+            (
+                "first steady heartbeat reports the adopted tasks",
+                unchanged.clone(),
+                expected_steady(1, Some(active(vec![0, 1]))),
+            ),
+            (
+                "unchanged tasks are not reported",
+                ok_resp(3, vec![0]),
+                expected_steady(2, None),
+            ),
+            (
+                "changed tasks are reported",
+                err_resp(99),
+                expected_steady(3, Some(active(vec![0]))),
+            ),
+            (
+                "a failed heartbeat reports the tasks again",
+                err_resp(FENCED_MEMBER_EPOCH),
+                expected_steady(3, Some(active(vec![0]))),
+            ),
+            (
+                "a fenced member joins again",
+                unchanged,
+                expected_join(None),
+            ),
+        ];
+        let fake = FakeTransport::new(steps.iter().map(|(_, resp, _)| resp.clone()).collect());
+        let sent = fake.sent_arc();
+        let (st, _rx) = state_with(fake);
+        *st.member_epoch.lock().await = 0;
+        for (index, (name, _, expected)) in steps.into_iter().enumerate() {
+            if matches!(heartbeat_once(&st).await, Outcome::Rejoin) {
+                reset_for_rejoin(&st).await;
+            }
+            let req = sent.lock().unwrap()[index].clone();
+            check!(req == expected, "{name}");
+            check!(kafka_refusal(&req) == None, "{name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn leave_heartbeat_carries_the_leave_epoch_and_instance_id() {
+        for instance_id in [None, Some("instance-1")] {
+            let (mut st, _rx) = state_with(FakeTransport::new(vec![]));
+            st.instance_id = instance_id.map(Into::into);
+            *st.owned_active.lock().await = vec![RespTaskIds2 {
+                subtopology_id: "0".into(),
+                partitions: vec![0],
+                ..Default::default()
+            }];
+            let req = leave_heartbeat(&st);
+            check!(
+                req == StreamsGroupHeartbeatRequest {
+                    group_id: "g".into(),
+                    member_id: "m".into(),
+                    member_epoch: -1,
+                    instance_id: instance_id.map(Into::into),
+                    ..Default::default()
+                }
+            );
+            check!(kafka_refusal(&req) == None);
+        }
     }
 
     #[tokio::test]
@@ -628,8 +1020,21 @@ mod tests {
         .await
         .expect("a Fenced event within 5s");
         check!(saw_fenced);
+        let sent = fake.sent_arc();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while sent.lock().unwrap().len() < 2 {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("a rejoin heartbeat within 5s");
         shutdown.cancel();
         handle.await.unwrap();
+        let sent = sent.lock().unwrap();
+        check!(sent[1] == expected_join(None));
+        for req in sent.iter() {
+            check!(kafka_refusal(req) == None);
+        }
     }
 
     #[tokio::test]
