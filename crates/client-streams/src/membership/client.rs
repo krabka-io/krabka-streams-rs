@@ -436,7 +436,7 @@ impl StreamsMembership {
         let join = loop {
             let response = coordinator::HeartbeatTransport::send_heartbeat(
                 &client,
-                build_join_heartbeat(
+                coordinator::join_heartbeat(
                     &group_id,
                     &member_id,
                     &process_id,
@@ -499,6 +499,7 @@ impl StreamsMembership {
             owned_active,
             owned_standby,
             owned_warmup,
+            last_sent_tasks: Mutex::new(None),
             tracker: tracker.clone(),
             heartbeat_interval: hb_interval,
             leave_heartbeat_timeout: leave_heartbeat_timeout.duration().as_time(),
@@ -599,26 +600,6 @@ impl StreamsMembership {
     }
 }
 
-fn build_join_heartbeat(
-    group_id: &str,
-    member_id: &str,
-    process_id: &str,
-    instance_id: Option<String>,
-    rebalance_timeout: Time,
-    topology: &crate::topology::BuiltTopology,
-) -> StreamsGroupHeartbeatRequest {
-    StreamsGroupHeartbeatRequest {
-        group_id: group_id.to_string(),
-        member_id: member_id.to_string(),
-        process_id: Some(process_id.to_string()),
-        instance_id,
-        // The generated request field is raw `int32` milliseconds.
-        rebalance_timeout_ms: rebalance_timeout.millis_i32(),
-        topology: Some(topology.to_wire_request()),
-        ..Default::default()
-    }
-}
-
 /// The coordinator's advertised heartbeat cadence, or the JVM default when the
 /// broker sends a non-positive value. `raw` is the response's raw `int32`
 /// milliseconds.
@@ -682,8 +663,8 @@ mod tests {
     use super::{
         COORDINATOR_LOAD_IN_PROGRESS, COORDINATOR_NOT_AVAILABLE, NOT_COORDINATOR,
         StreamsJoinRetryBackoff, StreamsLeaveHeartbeatTimeout, StreamsRebalanceTimeout,
-        build_join_heartbeat, heartbeat_interval, join_retry_delay, map_error,
-        should_emit_statuses, should_rediscover, should_retry_coordinator_discovery,
+        heartbeat_interval, join_retry_delay, map_error, should_emit_statuses, should_rediscover,
+        should_retry_coordinator_discovery,
     };
     use crate::{
         error::StreamsClientError, membership::types::TaskOffsetTracker, topology::Topology,
@@ -700,31 +681,6 @@ mod tests {
     #[test]
     fn ok_code_passes_through() {
         check!(map_error(resp(0)).is_ok());
-    }
-
-    #[test]
-    fn build_join_heartbeat_preserves_join_identity_and_topology() {
-        let mut topology = Topology::new();
-        let source = topology.add_source::<String, String>("source", ["input"]);
-        topology.add_sink("sink", "output", [&source]);
-        let topology = topology.build("streams-app").unwrap();
-
-        let req = build_join_heartbeat(
-            "streams-group",
-            "member-1",
-            "process-1",
-            Some("instance-1".into()),
-            secs(45),
-            &topology,
-        );
-
-        check!(req.group_id == "streams-group");
-        check!(req.member_id == "member-1");
-        check!(req.member_epoch == 0);
-        check!(req.process_id.as_deref() == Some("process-1"));
-        check!(req.instance_id.as_deref() == Some("instance-1"));
-        check!(req.rebalance_timeout_ms == 45_000);
-        check!(req.topology.is_some());
     }
 
     #[test]
