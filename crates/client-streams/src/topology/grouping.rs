@@ -13,6 +13,9 @@ use super::node::{ChangelogKind, NodeKind, NodeRegistry};
 #[derive(Debug, Clone, Default)]
 pub(crate) struct GroupTopics {
     pub id: String,
+    /// The names of the nodes in the subtopology, in insertion order. A
+    /// `GlobalKTable` node is listed with the group it fell into.
+    pub nodes: Vec<String>,
     /// The external source topics. The wire layer sorts them later.
     pub source_topics: Vec<String>,
     /// Internal repartition topics this subtopology reads.
@@ -111,6 +114,7 @@ pub(crate) fn group_nodes(reg: &NodeRegistry) -> Vec<GroupTopics> {
             id: id.to_string(),
             ..Default::default()
         });
+        entry.nodes.push(reg.nodes[i].name.clone());
         match &reg.nodes[i].kind {
             NodeKind::Source { topics } => {
                 for t in topics {

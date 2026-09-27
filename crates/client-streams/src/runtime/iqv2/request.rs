@@ -164,6 +164,21 @@ mod tests {
     }
 
     #[test]
+    fn partitions_reports_the_restriction() {
+        use assert2::check;
+
+        use crate::runtime::iqv2::query::KeyQuery;
+
+        let q = StateQueryRequest::in_store("s")
+            .with_query(KeyQuery::<String, i64>::with_key("k".into()));
+        check!(q.partitions().is_none());
+        let set: BTreeSet<i32> = [1, 3].into_iter().collect();
+        let q = q.with_partitions(set.clone());
+        check!(q.partitions() == Some(&set));
+        check!(q.with_all_partitions().partitions().is_none());
+    }
+
+    #[test]
     fn builder_defaults_and_store_name() {
         use crate::runtime::iqv2::query::KeyQuery;
 

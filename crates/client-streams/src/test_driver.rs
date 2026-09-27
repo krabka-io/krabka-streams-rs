@@ -59,7 +59,7 @@ impl TopologyTestDriver {
         // them byte for byte. The task opens in-memory stores with the record
         // cache disabled, the JVM `TopologyTestDriver` default, so stores emit
         // on every update and goldens stay deterministic.
-        let task = EmbeddedTask::instantiate(built, "app", HashSet::new())?;
+        let task = EmbeddedTask::instantiate(built, "app", HashSet::new(), None)?;
         Ok(Self {
             task,
             source_topics,

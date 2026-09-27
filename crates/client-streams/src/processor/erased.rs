@@ -22,6 +22,9 @@ pub enum ProcessorError {
     },
     #[error("serialization error in sink `{node}`: {message}")]
     Serde { node: String, message: String },
+    /// A subtopology id the built topology does not have.
+    #[error("the topology has no subtopology `{id}`")]
+    UnknownSubtopology { id: String },
 }
 
 /// A record with erased key/value, as it flows between nodes.
