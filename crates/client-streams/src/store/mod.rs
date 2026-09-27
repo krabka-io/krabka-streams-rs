@@ -14,6 +14,7 @@ pub(crate) mod session_schema;
 pub mod snapshot;
 pub(crate) mod suppress_bufval;
 pub mod suppress_store;
+#[cfg(not(target_family = "wasm"))]
 pub(crate) mod turso;
 pub mod versioned;
 pub mod window;
@@ -21,4 +22,6 @@ pub(crate) mod window_schema;
 pub use api::{KeyValueStore, StateStore};
 pub use backend::StoreBackend;
 pub use kv::KeyValueBytesStore;
-pub use snapshot::{FileSnapshotStore, NoSnapshotStore, SnapshotKey, SnapshotStore, TaskSnapshot};
+#[cfg(not(target_family = "wasm"))]
+pub use snapshot::FileSnapshotStore;
+pub use snapshot::{NoSnapshotStore, SnapshotKey, SnapshotStore, TaskSnapshot};

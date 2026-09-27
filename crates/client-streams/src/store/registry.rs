@@ -140,6 +140,12 @@ impl StoreRegistry {
             .downcast_mut::<crate::store::fk_subscription::SubscriptionBytesStore>()
     }
 
+    /// Erased access by name, for the read-only `StateStore` surface such as
+    /// `changelog_topic`.
+    pub fn get(&self, name: &str) -> Option<&dyn StateStore> {
+        self.stores.get(name).map(std::convert::AsRef::as_ref)
+    }
+
     /// Mutable erased access by name. The returned `&mut dyn StateStore` gives
     /// the `StateStore` trait surface: `changelog_topic`, `take_changelog`,
     /// `apply_changelog`, and `set_logging`.

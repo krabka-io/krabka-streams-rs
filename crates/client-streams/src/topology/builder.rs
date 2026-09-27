@@ -34,7 +34,7 @@ use krabka_units::prelude::*;
 use super::{
     grouping::group_nodes,
     node::{NodeKind, NodeRegistry},
-    wire::to_wire,
+    wire::{changelog_topic_name, to_wire},
 };
 use crate::processor::{
     api::ProcessorSupplier,
@@ -1208,6 +1208,17 @@ impl Topology {
             all.extend(g.repartition_source_topics.iter().cloned());
             source_topics.insert(g.id.clone(), all);
         }
+        let mut changelog_topics: Vec<(String, String)> = groups
+            .iter()
+            .flat_map(|g| g.changelog_stores.iter())
+            .map(|(store, changelog_override, _kind)| {
+                (
+                    store.clone(),
+                    changelog_topic_name(&app, store, changelog_override.as_deref()),
+                )
+            })
+            .collect();
+        changelog_topics.sort();
 
         // ── Identify the GlobalKTable source + update-processor nodes ─────────
         // A `GlobalKTable` source/processor is invisible in the wire AND has no
@@ -1279,6 +1290,7 @@ impl Topology {
         Ok(BuiltTopology {
             wire,
             source_topics,
+            changelog_topics,
             application_id: app,
             factories: self.factories,
             node_specs,
@@ -1331,6 +1343,10 @@ pub(crate) struct NodeSpec {
 pub struct BuiltTopology {
     wire: WireTopology,
     source_topics: BTreeMap<String, Vec<String>>,
+    /// Every logged store and its changelog topic, as `(store, topic)` in
+    /// ascending store order. The wire `state_changelog_topics` arrays carry
+    /// the same topics without the store names.
+    changelog_topics: Vec<(String, String)>,
     application_id: String,
     factories: HashMap<String, NodeFactory>,
     node_specs: Vec<NodeSpec>,
@@ -1347,8 +1363,6 @@ pub struct BuiltTopology {
     /// `global store name -> source topic` for each `GlobalKTable`. The shared
     /// global manager reads this so the consumer knows which topic feeds each
     /// store.
-    // Consumed by global-store wiring via the accessor.
-    #[allow(dead_code)]
     global_store_topics: HashMap<String, String>,
     /// Materialized KV stores that can use a record cache. This is JVM
     /// `Materialized` caching, which is on by default; `with_caching(false)`
@@ -1378,10 +1392,61 @@ impl BuiltTopology {
         super::wire::WireTopology::from(&self.wire)
     }
 
-    /// The raw protocol `Topology` to send in the `StreamsGroupHeartbeat` join.
+    /// The byte-exact KIP-1071 `StreamsGroupHeartbeat` `Topology`.
+    ///
+    /// The membership client sends this value when it joins the streams group,
+    /// and an embedder that runs its own membership sends the same value.
     #[must_use]
-    pub(crate) fn to_wire_request(&self) -> WireTopology {
+    pub fn to_wire_request(&self) -> WireTopology {
         self.wire.clone()
+    }
+
+    /// The subtopology ids, in the order the wire `Topology` lists them.
+    ///
+    /// Each id names one task per source partition, so an embedder wires one
+    /// [`EmbeddedTask`](crate::EmbeddedTask) per `(subtopology, partition)`.
+    #[must_use]
+    pub fn subtopology_ids(&self) -> Vec<String> {
+        self.wire
+            .subtopologies
+            .iter()
+            .map(|s| s.subtopology_id.clone())
+            .collect()
+    }
+
+    /// The internal repartition topics, sorted and without duplicates.
+    ///
+    /// A subtopology writes a repartition topic through a sink, and another
+    /// subtopology reads it as a source. The broker creates these topics when
+    /// the group joins, so an embedder that plays the broker creates them too.
+    #[must_use]
+    pub fn repartition_topics(&self) -> Vec<String> {
+        let mut topics: Vec<String> = self
+            .wire
+            .subtopologies
+            .iter()
+            .flat_map(|s| {
+                s.repartition_sink_topics.iter().cloned().chain(
+                    s.repartition_source_topics
+                        .iter()
+                        .map(|info| info.name.clone()),
+                )
+            })
+            .collect();
+        topics.sort();
+        topics.dedup();
+        topics
+    }
+
+    /// Every logged store and its changelog topic, as `(store, topic)` pairs in
+    /// ascending store order.
+    ///
+    /// The topic is the `REUSE_KTABLE_SOURCE_TOPICS` source topic when the
+    /// optimizer reuses one, else `<application_id>-<store>-changelog`. A store
+    /// with logging off has no pair, and neither does a global store.
+    #[must_use]
+    pub fn changelog_topics(&self) -> &[(String, String)] {
+        &self.changelog_topics
     }
 
     /// The `GlobalKTable` store factories, keyed by store name.
@@ -1401,8 +1466,13 @@ impl BuiltTopology {
     /// The `global store name -> source topic` map for each `GlobalKTable`.
     ///
     /// The shared global-store manager reads this so the global consumer knows
-    /// which topic feeds each store. The map is invisible in the wire output.
-    pub(crate) fn global_store_topics(&self) -> HashMap<String, String> {
+    /// which topic feeds each store, and an embedder reads it to know which
+    /// topics to replay into [`EmbeddedTask::apply_global`]. The map is
+    /// invisible in the wire output.
+    ///
+    /// [`EmbeddedTask::apply_global`]: crate::EmbeddedTask::apply_global
+    #[must_use]
+    pub fn global_store_topics(&self) -> HashMap<String, String> {
         self.global_store_topics.clone()
     }
 

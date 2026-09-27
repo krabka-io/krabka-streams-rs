@@ -151,6 +151,20 @@ fn topic_configs<const N: usize>(pairs: [(&str, String); N]) -> Vec<KeyValue> {
         .collect()
 }
 
+/// The changelog topic of a store: the `REUSE_KTABLE_SOURCE_TOPICS` override
+/// verbatim when the optimizer set one, else the JVM default
+/// `<app>-<store>-changelog`.
+pub(crate) fn changelog_topic_name(
+    application_id: &str,
+    store: &str,
+    changelog_override: Option<&str>,
+) -> String {
+    changelog_override.map_or_else(
+        || format!("{application_id}-{store}-changelog"),
+        str::to_string,
+    )
+}
+
 /// Build the wire `Topology` at epoch 0, with sorted subtopologies and sorted
 /// topic arrays.
 pub(crate) fn to_wire(groups: &[GroupTopics], application_id: &str) -> Topology {
@@ -201,12 +215,7 @@ fn subtopology(g: &GroupTopics, app: &str) -> Subtopology {
         .changelog_stores
         .iter()
         .map(|(store, changelog_override, changelog_kind)| TopicInfo {
-            // `REUSE_KTABLE_SOURCE_TOPICS`: when the store reuses its source
-            // topic as the changelog, the override carries that topic name;
-            // otherwise the JVM-default `<app>-<store>-changelog`.
-            name: changelog_override
-                .clone()
-                .unwrap_or_else(|| format!("{app}-{store}-changelog")),
+            name: changelog_topic_name(app, store, changelog_override.as_deref()),
             partitions: 0,
             replication_factor: INTERNAL_TOPIC_DEFAULT_RF,
             topic_configs: match changelog_kind {

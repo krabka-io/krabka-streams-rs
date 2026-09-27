@@ -46,13 +46,17 @@ impl ErasedRecord {
 }
 
 /// A record that a sink node emits and the driver collects. The test driver
-/// collects it into an output queue, and the runtime collects it into the
-/// producer.
+/// collects it into an output queue, the runtime hands it to the producer, and
+/// an [`EmbeddedTask`](crate::EmbeddedTask) returns it to the embedder.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct OutputRecord {
+pub struct OutputRecord {
+    /// The sink topic, which is a repartition topic for an internal sink.
     pub topic: String,
+    /// The serialized key, or `None` for a record without one.
     pub key: Option<Bytes>,
+    /// The serialized value, or `None` for a tombstone.
     pub value: Option<Bytes>,
+    /// The record timestamp in epoch milliseconds.
     pub timestamp: i64,
 }
 

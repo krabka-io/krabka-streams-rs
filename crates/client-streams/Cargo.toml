@@ -16,14 +16,17 @@ categories = ["api-bindings", "network-programming"]
 [lints]
 workspace = true
 
+# The crate builds for two kinds of target. The website playground compiles
+# the topology, processor, DSL and store layers for the browser
+# (`wasm32-unknown-unknown`), where it drives a task's processor graph through
+# `EmbeddedTask` with bytes from simulated brokers. The membership and runtime
+# layers are Kafka network clients, and they stay native: the client crates
+# need sockets, DNS and TLS, `turso` is a native database engine,
+# `krabka-schema-serde` spawns a `reqwest` future that is not `Send` on wasm,
+# and tokio refuses `rt-multi-thread` on wasm. The dependencies below are the
+# ones both targets share; the two `[target.*]` tables hold the split.
 [dependencies]
 krabka-protocol = { version = "0.4.0", default-features = false }
-# Schema-registry serdes (Avro/Protobuf/JSON) are a first-class, always-on part
-# of the streams client — no feature gate.
-krabka-schema-serde = { version = "0.4.0", features = ["avro", "protobuf", "json"] }
-krabka-client-core = { version = "0.4.0" }
-krabka-client-consumer = { version = "0.4.0" }
-krabka-client-producer = { version = "0.4.0" }
 krabka-units = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
@@ -31,11 +34,7 @@ bytes = { workspace = true }
 refined_type = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-uuid = { workspace = true }
-tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
-tokio-util = { workspace = true, features = ["rt"] }
 tracing = { workspace = true }
-turso = "0.7"
 pollster = "1.0"
 
 # Columnar / dataframe support (opt-in via the `arrow`, `columnar`, and
@@ -45,6 +44,22 @@ polars-arrow = { workspace = true, optional = true }
 arrow = { workspace = true, optional = true }
 columnar = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+# Schema-registry serdes (Avro/Protobuf/JSON) are a first-class, always-on part
+# of the streams client — no feature gate.
+krabka-schema-serde = { version = "0.4.0", features = ["avro", "protobuf", "json"] }
+krabka-client-core = { version = "0.4.0" }
+krabka-client-consumer = { version = "0.4.0" }
+krabka-client-producer = { version = "0.4.0" }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
+tokio-util = { workspace = true, features = ["rt"] }
+# The member and process ids of a streams group member are v4 UUIDs.
+uuid = { workspace = true }
+turso = "0.7"
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
 
 [features]
 arrow = ["dep:arrow", "dep:serde_json"]

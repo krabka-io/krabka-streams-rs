@@ -4,6 +4,7 @@
 //! This module uses a channel of its own, separate from the v1
 //! `ReadOnly*Store` views in `runtime::iq_view`. It does not change v1.
 
+#[cfg(not(target_family = "wasm"))]
 pub(crate) mod dispatch;
 pub mod query;
 pub mod request;

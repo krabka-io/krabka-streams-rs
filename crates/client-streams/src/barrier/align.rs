@@ -113,11 +113,16 @@ impl BarrierAlignment {
         &self.group
     }
 
-    pub(crate) fn snapshots(&self) -> &Arc<dyn SnapshotStore> {
+    /// The store that keeps each cut's snapshot.
+    #[must_use]
+    pub fn snapshots(&self) -> &Arc<dyn SnapshotStore> {
         &self.snapshots
     }
 
-    pub(crate) fn listener(&self) -> Option<&Arc<dyn BarrierListener>> {
+    /// The callback the thread calls after each barrier commit, when one is
+    /// set.
+    #[must_use]
+    pub fn listener(&self) -> Option<&Arc<dyn BarrierListener>> {
         self.listener.as_ref()
     }
 }
