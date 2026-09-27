@@ -10,10 +10,11 @@ use std::{collections::HashMap, sync::Arc};
 use bytes::Bytes;
 use tokio::sync::Mutex;
 
+use crate::store::{backend::StoreBackend, registry::StoreRegistry};
+#[cfg(not(target_family = "wasm"))]
 use crate::{
     error::StreamsClientError,
     runtime::io::{IsolationLevel, RecordFetcher},
-    store::{backend::StoreBackend, registry::StoreRegistry},
 };
 
 #[derive(Clone, Default)]
@@ -113,6 +114,10 @@ impl GlobalStateManager {
     /// offset 0 to the end of the log and applies each record. It returns the
     /// per-`(topic, partition)` next-offset map, so a live poll can resume. It
     /// blocks until it drains every partition.
+    ///
+    /// The global consumer of the native runtime drives it. An embedder feeds
+    /// the stores through [`apply`](Self::apply) instead.
+    #[cfg(not(target_family = "wasm"))]
     #[tracing::instrument(
         name = "streams.global.bootstrap",
         level = "info",
@@ -174,6 +179,7 @@ impl GlobalStateManager {
     /// them, and advances the offsets in place. It fetches one batch per
     /// partition and does not read to the end of the log, so the caller must
     /// repeat the call.
+    #[cfg(not(target_family = "wasm"))]
     #[tracing::instrument(
         name = "streams.global.poll_once",
         level = "debug",

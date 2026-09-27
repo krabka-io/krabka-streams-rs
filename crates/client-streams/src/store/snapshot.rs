@@ -23,10 +23,9 @@
 //! The cut identity is not in the container. It is the storage key, which is
 //! the task, the barrier group, and the epoch. See [`SnapshotKey`].
 
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-};
+use std::collections::BTreeMap;
+#[cfg(not(target_family = "wasm"))]
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -291,7 +290,7 @@ impl SnapshotKey {
         }
     }
 
-    /// The file name that [`FileSnapshotStore`] gives this key.
+    /// The file name that the file-backed snapshot store gives this key.
     ///
     /// Every character outside `A-Z`, `a-z`, `0-9`, `.`, `_`, and `-` becomes an
     /// underscore, so a group name or a task name can never escape the
@@ -322,9 +321,9 @@ fn sanitize(value: &str) -> String {
 
 /// Keeps the store snapshots a task takes at each barrier cut.
 ///
-/// [`FileSnapshotStore`] writes them to local files. [`NoSnapshotStore`] keeps
-/// nothing, which makes the barrier an alignment and commit point with no
-/// durable state.
+/// `FileSnapshotStore` writes them to local files on native targets.
+/// [`NoSnapshotStore`] keeps nothing, which makes the barrier an alignment and
+/// commit point with no durable state.
 #[async_trait]
 pub trait SnapshotStore: Send + Sync + 'static {
     /// Stores one task's snapshot under `key`, and replaces what was there.
@@ -375,7 +374,8 @@ impl SnapshotStore for NoSnapshotStore {
 ///
 /// A save writes a temporary file in the same directory and renames it over the
 /// target, so a crash in the middle of a save leaves the previous snapshot
-/// whole. The directory is created on the first save.
+/// whole. The directory is created on the first save. The store needs a file
+/// system and a blocking thread pool, so it exists only on native targets.
 ///
 /// # Examples
 ///
@@ -386,11 +386,13 @@ impl SnapshotStore for NoSnapshotStore {
 /// // transactions-0-1-epoch-7.snapshot
 /// let file = store.file(&SnapshotKey::new("0-1", "transactions", 7));
 /// ```
+#[cfg(not(target_family = "wasm"))]
 #[derive(Debug, Clone)]
 pub struct FileSnapshotStore {
     directory: PathBuf,
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl FileSnapshotStore {
     /// Creates a store rooted at `directory`.
     #[must_use]
@@ -409,6 +411,7 @@ impl FileSnapshotStore {
 
 /// Writes `data` to a temporary file beside `target` and renames it over
 /// `target`.
+#[cfg(not(target_family = "wasm"))]
 fn write_atomically(directory: &Path, target: &Path, data: &[u8]) -> std::io::Result<()> {
     std::fs::create_dir_all(directory)?;
     let mut temporary = target.as_os_str().to_owned();
@@ -424,6 +427,7 @@ fn write_atomically(directory: &Path, target: &Path, data: &[u8]) -> std::io::Re
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 #[async_trait]
 impl SnapshotStore for FileSnapshotStore {
     async fn save(

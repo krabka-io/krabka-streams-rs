@@ -7,12 +7,10 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use krabka_units::prelude::*;
-
 use crate::{
+    embedded::EmbeddedTask,
     processor::{
         erased::{OutputRecord, ProcessorError},
-        graph::Graph,
         serde::{Consumed, Produced, Serde, SerdeAssociate},
     },
     topology::BuiltTopology,
@@ -27,7 +25,7 @@ type PendingRecord = (String, Option<Vec<u8>>, Vec<u8>, i64);
 /// exposes `pipe_input` and `read_output`, so a test can exercise processing
 /// logic without a real broker.
 pub struct TopologyTestDriver {
-    graph: Graph,
+    task: EmbeddedTask,
     source_topics: HashSet<String>,
     output: HashMap<String, VecDeque<OutputRecord>>,
     /// Mock wall clock in ms. `advance_wall_clock_time` advances it, and the
@@ -46,33 +44,24 @@ pub struct TopologyTestDriver {
 }
 
 impl TopologyTestDriver {
-    /// Instantiates the topology's graph for testing. This method returns an
-    /// error if the topology is invalid. It propagates `instantiate`'s error.
+    /// Instantiates the topology's graph for testing.
+    ///
     /// # Errors
-    /// Returns an error when configuration is invalid, protocol encoding fails, the broker rejects the request, or transport I/O fails.
+    ///
+    /// Returns the [`ProcessorError`] that instantiation or a processor's
+    /// `init` raises. A topology that `build` accepted raises none in
+    /// practice.
     pub fn new(built: &BuiltTopology) -> Result<Self, ProcessorError> {
         let source_topics: HashSet<String> = built.list_source_topics().into_iter().collect();
-        let backend = crate::store::backend::StoreBackend::InMemory;
-        // The JVM `TopologyTestDriver` defaults `statestore.cache.max.bytes` to 0
-        // (caching disabled), so stores emit on every update and goldens stay
-        // deterministic. Match that here.
-        let mut graph = pollster::block_on(built.instantiate(&backend, "app", ByteSize::ZERO))?;
-        // The TopologyTestDriver builds the SHARED, fully-replicated global stores
-        // into a `GlobalStateManager` and lends it to the graph's dispatch — the
-        // same shared manager the real app runtime uses (the global consumer that
-        // populates it lives in the app wiring; `BuiltTopology::instantiate`
-        // deliberately omits global stores from the per-task registry, since a
-        // global store is fully replicated, not task-partitioned). Tests populate
-        // it directly via `pipe_global`, and stream-globaltable joins read it.
-        graph.globals = pollster::block_on(crate::runtime::global::GlobalStateManager::build(
-            built.global_store_factories(),
-            built.global_store_topics(),
-            &backend,
-            "app",
-        ));
-        pollster::block_on(graph.init_processors())?;
+        // The driver derives the default changelog names from the application
+        // id `app`, whatever id the topology was built with, and it keeps every
+        // changelog record, reuse-source ones included, so a test can assert
+        // them byte for byte. The task opens in-memory stores with the record
+        // cache disabled, the JVM `TopologyTestDriver` default, so stores emit
+        // on every update and goldens stay deterministic.
+        let task = EmbeddedTask::instantiate(built, "app", HashSet::new(), None)?;
         Ok(Self {
-            graph,
+            task,
             source_topics,
             output: HashMap::new(),
             mock_wall_ms: 0,
@@ -123,11 +112,11 @@ impl TopologyTestDriver {
         while let Some((t, k, v, ts)) = queue.pop_front() {
             // run the graph for this topic; ignore unknown topics
             let offset = self.next_offset(&t);
-            let _ = pollster::block_on(self.graph.pipe(&t, 0, offset, k.as_deref(), &v, ts));
+            let _ = self.task.pipe(&t, 0, offset, k.as_deref(), &v, ts);
             self.route_outputs(&mut queue);
             // Stream-time advanced by this record → fire stream-time punctuators; their
             // forwarded records route like any output (and may loop back to a source).
-            let _ = pollster::block_on(self.graph.punctuate_stream_time(self.graph.stream_time));
+            let _ = self.task.punctuate_stream_time(self.task.stream_time());
             self.route_outputs(&mut queue);
         }
     }
@@ -139,14 +128,14 @@ impl TopologyTestDriver {
     pub fn advance_wall_clock_time(&mut self, by: std::time::Duration) {
         self.mock_wall_ms += i64::try_from(by.as_millis()).unwrap_or(i64::MAX);
         let mut queue: VecDeque<PendingRecord> = VecDeque::new();
-        let _ = pollster::block_on(self.graph.punctuate_wall_clock(self.mock_wall_ms));
+        let _ = self.task.punctuate_wall_clock(self.mock_wall_ms);
         self.route_outputs(&mut queue);
         // Drain any loopback the punctuators produced (and fire stream-time for those).
         while let Some((t, k, v, ts)) = queue.pop_front() {
             let offset = self.next_offset(&t);
-            let _ = pollster::block_on(self.graph.pipe(&t, 0, offset, k.as_deref(), &v, ts));
+            let _ = self.task.pipe(&t, 0, offset, k.as_deref(), &v, ts);
             self.route_outputs(&mut queue);
-            let _ = pollster::block_on(self.graph.punctuate_stream_time(self.graph.stream_time));
+            let _ = self.task.punctuate_stream_time(self.task.stream_time());
             self.route_outputs(&mut queue);
         }
     }
@@ -161,7 +150,7 @@ impl TopologyTestDriver {
     /// the record-processing phase and the stream-time-punctuation phase of
     /// `pipe_bytes` call this method.
     fn route_outputs(&mut self, queue: &mut VecDeque<PendingRecord>) {
-        for out in self.graph.take_output() {
+        for out in self.task.take_output() {
             if self.source_topics.contains(&out.topic) {
                 // internal repartition topic feeding another subtopology → loop back
                 let vv = out.value.clone().unwrap_or_default().to_vec();
@@ -183,8 +172,10 @@ impl TopologyTestDriver {
         // byte-exact changelog assertions (`drain_changelog`). No reuse-source
         // suppression — the driver never re-produces, so no write-back loop.
         self.changelog_captured.extend(
-            self.graph
-                .drain_changelogs(&std::collections::HashSet::new()),
+            self.task
+                .drain_changelogs()
+                .into_iter()
+                .map(|r| (r.topic, r.key, r.value, r.timestamp)),
         );
     }
 
@@ -196,7 +187,7 @@ impl TopologyTestDriver {
         &mut self,
         name: &str,
     ) -> Option<&mut dyn crate::store::api::KeyValueStore<K, V>> {
-        self.graph.stores.get_kv::<K, V>(name)
+        self.task.graph_mut().stores.get_kv::<K, V>(name)
     }
 
     /// Test-only synchronous store read that calls `block_on` on the async
@@ -209,7 +200,7 @@ impl TopologyTestDriver {
         store: &str,
         key: &K,
     ) -> Option<V> {
-        let s = self.graph.stores.get_kv::<K, V>(store)?;
+        let s = self.task.graph_mut().stores.get_kv::<K, V>(store)?;
         pollster::block_on(s.get(key))
     }
 
@@ -219,7 +210,11 @@ impl TopologyTestDriver {
         store_name: &str,
         key: &K,
     ) -> Option<V> {
-        let store = self.graph.stores.get_versioned::<K, V>(store_name)?;
+        let store = self
+            .task
+            .graph_mut()
+            .stores
+            .get_versioned::<K, V>(store_name)?;
         pollster::block_on(store.get(key)).map(|r| r.value)
     }
 
@@ -247,7 +242,7 @@ impl TopologyTestDriver {
         K: Send + Sync + 'static,
         V: Send + 'static,
     {
-        pollster::block_on(self.graph.globals.put(store_name, key, value));
+        pollster::block_on(self.task.graph().globals.put(store_name, key, value));
     }
 
     // ── Interactive-query reads ─────────────────────────────────────────────
@@ -269,7 +264,7 @@ impl TopologyTestDriver {
         ks: &dyn Serde<K>,
         vs: &dyn Serde<V>,
     ) -> Option<V> {
-        let q = self.graph.stores.iq_get(store)?;
+        let q = self.task.graph().stores.iq_get(store)?;
         let kb = ks.serialize(store, key);
         let vb = q.iq_kv_get(&kb).await?;
         Some(vs.deserialize(store, &vb).expect("iq deserialize"))
@@ -288,7 +283,7 @@ impl TopologyTestDriver {
         ks: &dyn Serde<K>,
         vs: &dyn Serde<V>,
     ) -> Vec<(K, V)> {
-        let Some(q) = self.graph.stores.iq_get(store) else {
+        let Some(q) = self.task.graph().stores.iq_get(store) else {
             return Vec::new();
         };
         let lob = ks.serialize(store, lo);
@@ -314,7 +309,7 @@ impl TopologyTestDriver {
         ks: &dyn Serde<K>,
         vs: &dyn Serde<V>,
     ) -> Vec<(K, V)> {
-        let Some(q) = self.graph.stores.iq_get(store) else {
+        let Some(q) = self.task.graph().stores.iq_get(store) else {
             return Vec::new();
         };
         q.iq_kv_all()
@@ -332,7 +327,7 @@ impl TopologyTestDriver {
     /// Interactive-query approximate entry count for a KV store. The result is
     /// `0` if the store is absent.
     pub async fn iq_kv_count(&self, store: &str) -> u64 {
-        match self.graph.stores.iq_get(store) {
+        match self.task.graph().stores.iq_get(store) {
             Some(q) => q.iq_kv_approx_count().await,
             None => 0,
         }
@@ -353,7 +348,7 @@ impl TopologyTestDriver {
         ks: &dyn Serde<K>,
         vs: &dyn Serde<V>,
     ) -> Vec<(i64, V)> {
-        let Some(q) = self.graph.stores.iq_get(store) else {
+        let Some(q) = self.task.graph().stores.iq_get(store) else {
             return Vec::new();
         };
         let kb = ks.serialize(store, key);
@@ -376,7 +371,7 @@ impl TopologyTestDriver {
         ks: &dyn Serde<K>,
         vs: &dyn Serde<V>,
     ) -> Option<V> {
-        let q = self.graph.stores.iq_get(store)?;
+        let q = self.task.graph().stores.iq_get(store)?;
         let kb = ks.serialize(store, key);
         let vb = q.iq_window_fetch_single(&kb, window_start).await?;
         Some(vs.deserialize(store, &vb).expect("iq deserialize"))
@@ -399,7 +394,7 @@ impl TopologyTestDriver {
 
         let store_name = req.store.clone();
         let kind = req.query.store_kind();
-        let Some(store) = self.graph.stores.iq_get(&store_name) else {
+        let Some(store) = self.task.graph().stores.iq_get(&store_name) else {
             // The driver has full single-graph knowledge, so an unknown store
             // name is genuinely `DoesNotExist`. (The distributed runtime cannot
             // distinguish absent-from-topology vs not-on-this-partition, so
@@ -465,7 +460,7 @@ impl TopologyTestDriver {
         ks: &dyn Serde<K>,
         vs: &dyn Serde<V>,
     ) -> Vec<((i64, i64), V)> {
-        let Some(q) = self.graph.stores.iq_get(store) else {
+        let Some(q) = self.task.graph().stores.iq_get(store) else {
             return Vec::new();
         };
         let kb = ks.serialize(store, key);
@@ -511,6 +506,7 @@ impl TopologyTestDriver {
 mod tests {
     use assert2::check;
     use async_trait::async_trait;
+    use krabka_units::prelude::*;
 
     use super::*;
     use crate::{
@@ -573,7 +569,7 @@ mod tests {
         // so the driver builds its graph with caching disabled (emit-on-update).
         let built = map_filter();
         let d = TopologyTestDriver::new(&built).unwrap();
-        check!(d.graph.cache_max_bytes() == ByteSize::ZERO);
+        check!(d.task.graph().cache_max_bytes() == ByteSize::ZERO);
     }
 
     #[test]

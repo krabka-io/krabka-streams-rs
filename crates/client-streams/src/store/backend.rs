@@ -1,19 +1,16 @@
 //! Which storage engine backs the state stores.
 //!
 //! `InMemory` is the test default and is also a valid production option. `Turso`
-//! persists the state under a state directory.
-use crate::store::{
-    byte::{ByteKeyValueStore, InMemoryBytes},
-    turso::TursoBytes,
-};
+//! persists the state under a state directory, and it is a native database
+//! engine, so the variant exists only on native targets.
+use crate::store::byte::{ByteKeyValueStore, InMemoryBytes};
 
 #[derive(Clone, Debug, Default)]
 pub enum StoreBackend {
     #[default]
     InMemory,
-    Turso {
-        state_dir: std::path::PathBuf,
-    },
+    #[cfg(not(target_family = "wasm"))]
+    Turso { state_dir: std::path::PathBuf },
 }
 
 impl StoreBackend {
@@ -28,11 +25,14 @@ impl StoreBackend {
     pub(crate) async fn open(&self, app_id: &str, store: &str) -> Box<dyn ByteKeyValueStore> {
         match self {
             Self::InMemory => Box::new(InMemoryBytes::default()),
+            #[cfg(not(target_family = "wasm"))]
             Self::Turso { state_dir } => {
                 let dir = state_dir.join(app_id);
                 std::fs::create_dir_all(&dir).expect("create state dir");
                 let path = dir.join(format!("{store}.db"));
-                Box::new(TursoBytes::open(path.to_str().expect("utf8 path")).await)
+                Box::new(
+                    crate::store::turso::TursoBytes::open(path.to_str().expect("utf8 path")).await,
+                )
             }
         }
     }

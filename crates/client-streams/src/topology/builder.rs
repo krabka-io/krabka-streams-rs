@@ -3,7 +3,7 @@
 use std::{
     any::Any,
     borrow::Borrow,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     marker::PhantomData,
 };
 
@@ -34,7 +34,7 @@ use krabka_units::prelude::*;
 use super::{
     grouping::group_nodes,
     node::{NodeKind, NodeRegistry},
-    wire::to_wire,
+    wire::{changelog_topic_name, to_wire},
 };
 use crate::processor::{
     api::ProcessorSupplier,
@@ -1208,6 +1208,17 @@ impl Topology {
             all.extend(g.repartition_source_topics.iter().cloned());
             source_topics.insert(g.id.clone(), all);
         }
+        let mut changelog_topics: Vec<(String, String)> = groups
+            .iter()
+            .flat_map(|g| g.changelog_stores.iter())
+            .map(|(store, changelog_override, _kind)| {
+                (
+                    store.clone(),
+                    changelog_topic_name(&app, store, changelog_override.as_deref()),
+                )
+            })
+            .collect();
+        changelog_topics.sort();
 
         // ── Identify the GlobalKTable source + update-processor nodes ─────────
         // A `GlobalKTable` source/processor is invisible in the wire AND has no
@@ -1234,6 +1245,21 @@ impl Topology {
                 global_nodes.insert(n.name.as_str());
             }
         }
+
+        // The non-global nodes of each subtopology, for a graph that runs one
+        // subtopology alone.
+        let subtopology_nodes: BTreeMap<String, HashSet<String>> = groups
+            .iter()
+            .map(|g| {
+                let nodes = g
+                    .nodes
+                    .iter()
+                    .filter(|n| !global_nodes.contains(n.as_str()))
+                    .cloned()
+                    .collect();
+                (g.id.clone(), nodes)
+            })
+            .collect();
 
         // ── Build node specs for instantiation (excluding global nodes) ───────
         let node_specs: Vec<NodeSpec> = self
@@ -1279,6 +1305,8 @@ impl Topology {
         Ok(BuiltTopology {
             wire,
             source_topics,
+            changelog_topics,
+            subtopology_nodes,
             application_id: app,
             factories: self.factories,
             node_specs,
@@ -1331,6 +1359,14 @@ pub(crate) struct NodeSpec {
 pub struct BuiltTopology {
     wire: WireTopology,
     source_topics: BTreeMap<String, Vec<String>>,
+    /// Every logged store and its changelog topic, as `(store, topic)` in
+    /// ascending store order. The wire `state_changelog_topics` arrays carry
+    /// the same topics without the store names.
+    changelog_topics: Vec<(String, String)>,
+    /// Subtopology id to the names of its nodes, global nodes excluded.
+    /// [`instantiate_subtopology`](Self::instantiate_subtopology) builds one
+    /// subtopology's graph from it.
+    subtopology_nodes: BTreeMap<String, HashSet<String>>,
     application_id: String,
     factories: HashMap<String, NodeFactory>,
     node_specs: Vec<NodeSpec>,
@@ -1347,8 +1383,6 @@ pub struct BuiltTopology {
     /// `global store name -> source topic` for each `GlobalKTable`. The shared
     /// global manager reads this so the consumer knows which topic feeds each
     /// store.
-    // Consumed by global-store wiring via the accessor.
-    #[allow(dead_code)]
     global_store_topics: HashMap<String, String>,
     /// Materialized KV stores that can use a record cache. This is JVM
     /// `Materialized` caching, which is on by default; `with_caching(false)`
@@ -1378,10 +1412,61 @@ impl BuiltTopology {
         super::wire::WireTopology::from(&self.wire)
     }
 
-    /// The raw protocol `Topology` to send in the `StreamsGroupHeartbeat` join.
+    /// The byte-exact KIP-1071 `StreamsGroupHeartbeat` `Topology`.
+    ///
+    /// The membership client sends this value when it joins the streams group,
+    /// and an embedder that runs its own membership sends the same value.
     #[must_use]
-    pub(crate) fn to_wire_request(&self) -> WireTopology {
+    pub fn to_wire_request(&self) -> WireTopology {
         self.wire.clone()
+    }
+
+    /// The subtopology ids, in the order the wire `Topology` lists them.
+    ///
+    /// Each id names one task per source partition, so an embedder wires one
+    /// [`EmbeddedTask`](crate::EmbeddedTask) per `(subtopology, partition)`.
+    #[must_use]
+    pub fn subtopology_ids(&self) -> Vec<String> {
+        self.wire
+            .subtopologies
+            .iter()
+            .map(|s| s.subtopology_id.clone())
+            .collect()
+    }
+
+    /// The internal repartition topics, sorted and without duplicates.
+    ///
+    /// A subtopology writes a repartition topic through a sink, and another
+    /// subtopology reads it as a source. The broker creates these topics when
+    /// the group joins, so an embedder that plays the broker creates them too.
+    #[must_use]
+    pub fn repartition_topics(&self) -> Vec<String> {
+        let mut topics: Vec<String> = self
+            .wire
+            .subtopologies
+            .iter()
+            .flat_map(|s| {
+                s.repartition_sink_topics.iter().cloned().chain(
+                    s.repartition_source_topics
+                        .iter()
+                        .map(|info| info.name.clone()),
+                )
+            })
+            .collect();
+        topics.sort();
+        topics.dedup();
+        topics
+    }
+
+    /// Every logged store and its changelog topic, as `(store, topic)` pairs in
+    /// ascending store order.
+    ///
+    /// The topic is the `REUSE_KTABLE_SOURCE_TOPICS` source topic when the
+    /// optimizer reuses one, else `<application_id>-<store>-changelog`. A store
+    /// with logging off has no pair, and neither does a global store.
+    #[must_use]
+    pub fn changelog_topics(&self) -> &[(String, String)] {
+        &self.changelog_topics
     }
 
     /// The `GlobalKTable` store factories, keyed by store name.
@@ -1401,8 +1486,13 @@ impl BuiltTopology {
     /// The `global store name -> source topic` map for each `GlobalKTable`.
     ///
     /// The shared global-store manager reads this so the global consumer knows
-    /// which topic feeds each store. The map is invisible in the wire output.
-    pub(crate) fn global_store_topics(&self) -> HashMap<String, String> {
+    /// which topic feeds each store, and an embedder reads it to know which
+    /// topics to replay into [`EmbeddedTask::apply_global`]. The map is
+    /// invisible in the wire output.
+    ///
+    /// [`EmbeddedTask::apply_global`]: crate::EmbeddedTask::apply_global
+    #[must_use]
+    pub fn global_store_topics(&self) -> HashMap<String, String> {
         self.global_store_topics.clone()
     }
 
@@ -1444,7 +1534,8 @@ impl BuiltTopology {
     /// Instantiate a runnable [`Graph`] for this topology.
     ///
     /// Each call produces an independent graph with its own processor instances
-    /// and a fresh byte-store backend opened through `backend`.
+    /// and a fresh byte-store backend opened through `backend`. The graph holds
+    /// every subtopology.
     #[tracing::instrument(
         name = "streams.topology.instantiate",
         level = "info",
@@ -1458,12 +1549,57 @@ impl BuiltTopology {
         app_id: &str,
         cache_max_bytes: ByteSize,
     ) -> Result<Graph, ProcessorError> {
+        self.instantiate_nodes(backend, app_id, cache_max_bytes, None)
+            .await
+    }
+
+    /// Instantiate a runnable [`Graph`] of one subtopology: its sources,
+    /// processors and sinks, and the stores its processors connect to.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProcessorError::UnknownSubtopology`] when the topology has no
+    /// subtopology `subtopology_id`, else what [`instantiate`](Self::instantiate)
+    /// returns.
+    #[tracing::instrument(
+        name = "streams.topology.instantiate_subtopology",
+        level = "info",
+        skip_all,
+        fields(app_id = %app_id, subtopology_id = %subtopology_id, cache_max_bytes = cache_max_bytes.bytes_i64()),
+        err,
+    )]
+    pub(crate) async fn instantiate_subtopology(
+        &self,
+        backend: &crate::store::backend::StoreBackend,
+        app_id: &str,
+        cache_max_bytes: ByteSize,
+        subtopology_id: &str,
+    ) -> Result<Graph, ProcessorError> {
+        let scope = self.subtopology_nodes.get(subtopology_id).ok_or_else(|| {
+            ProcessorError::UnknownSubtopology {
+                id: subtopology_id.to_string(),
+            }
+        })?;
+        self.instantiate_nodes(backend, app_id, cache_max_bytes, Some(scope))
+            .await
+    }
+
+    /// Instantiates the graph of the nodes in `scope`, or of every node when
+    /// `scope` is `None`. A store is built when one of its processors is.
+    async fn instantiate_nodes(
+        &self,
+        backend: &crate::store::backend::StoreBackend,
+        app_id: &str,
+        cache_max_bytes: ByteSize,
+        scope: Option<&HashSet<String>>,
+    ) -> Result<Graph, ProcessorError> {
+        let keep = |name: &str| scope.is_none_or(|set| set.contains(name));
         // 1. Collect the processor/sink nodes in spec order and build a name→idx map.
         //    Sources are NOT in the nodes vec — they become GraphSources.
         let non_source: Vec<&NodeSpec> = self
             .node_specs
             .iter()
-            .filter(|s| s.kind != "source")
+            .filter(|s| s.kind != "source" && keep(&s.name))
             .collect();
 
         let name_to_idx: HashMap<&str, usize> = non_source
@@ -1508,7 +1644,7 @@ impl BuiltTopology {
         let sources: Vec<GraphSource> = self
             .node_specs
             .iter()
-            .filter(|s| s.kind == "source")
+            .filter(|s| s.kind == "source" && keep(&s.name))
             .flat_map(|src_spec| {
                 // Find which processor/sink nodes list this source as a predecessor.
                 let src_name = src_spec.name.as_str();
@@ -1544,6 +1680,14 @@ impl BuiltTopology {
         // Build the per-task store registry from the typed factories.
         let mut store_registry = crate::store::registry::StoreRegistry::default();
         for (store_name, (changelog_override, factory)) in &self.store_factories {
+            let connected = scope.is_none_or(|_| {
+                self.store_processors
+                    .get(store_name)
+                    .is_some_and(|procs| procs.iter().any(|p| keep(p)))
+            });
+            if !connected {
+                continue;
+            }
             let changelog = changelog_override
                 .clone()
                 .unwrap_or_else(|| format!("{app_id}-{store_name}-changelog"));

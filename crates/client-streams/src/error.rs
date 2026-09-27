@@ -4,6 +4,7 @@
 #[derive(Debug, thiserror::Error)]
 pub enum StreamsClientError {
     /// A transport failure or a dispatch failure from `krabka-client-core`.
+    #[cfg(not(target_family = "wasm"))]
     #[error(transparent)]
     Transport(#[from] krabka_client_core::ClientError),
     /// The topology build failed, because the node graph is bad.
@@ -33,9 +34,11 @@ pub enum StreamsClientError {
     Runtime(String),
     /// The transactional or idempotent producer was fenced by a newer epoch.
     /// This is fatal for the stream thread and must never enter retry rollback.
+    #[cfg(not(target_family = "wasm"))]
     #[error(transparent)]
     Producer(#[from] krabka_client_producer::ProducerError),
     /// An interactive query failed.
+    #[cfg(not(target_family = "wasm"))]
     #[error(transparent)]
     InteractiveQuery(#[from] crate::runtime::iq::IqError),
     /// A record on the `__barrier_state` topic does not match the frozen
@@ -48,6 +51,7 @@ pub enum StreamsClientError {
     Snapshot(String),
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl StreamsClientError {
     #[must_use]
     pub(crate) fn is_producer_fenced(&self) -> bool {

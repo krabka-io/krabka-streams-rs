@@ -10,6 +10,7 @@ pub mod punctuation;
 pub mod record;
 pub mod serde;
 
+#[cfg(not(target_family = "wasm"))]
 pub mod schema_serde;
 
 pub use api::{Processor, ProcessorContext, ProcessorSupplier};

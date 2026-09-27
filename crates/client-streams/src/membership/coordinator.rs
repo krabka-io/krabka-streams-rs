@@ -132,7 +132,7 @@ impl TaskLists {
 /// Kafka refuses a join that omits the rebalance timeout or the topology, and
 /// one whose task lists are absent or non-empty (`ActiveTasks must be empty
 /// when (re-)joining.`), so the join sends three empty lists.
-pub(super) fn join_heartbeat(
+pub(crate) fn join_heartbeat(
     group_id: &str,
     member_id: &str,
     process_id: &str,

@@ -22,7 +22,7 @@ impl Position {
     /// True when `self` meets or exceeds every `(topic, partition)` offset in
     /// `bound`. A bound that names a partition `self` has never advanced fails.
     #[must_use]
-    pub(crate) fn dominates(&self, bound: &Position) -> bool {
+    pub fn dominates(&self, bound: &Position) -> bool {
         bound.0.iter().all(|(topic, parts)| {
             parts
                 .iter()
@@ -65,6 +65,16 @@ impl<Q: Query> StateQuery<Q> {
     pub fn with_partitions(mut self, set: BTreeSet<i32>) -> Self {
         self.partitions = PartitionSel::Set(set);
         self
+    }
+
+    /// The partitions the query is restricted to, or `None` when it reads
+    /// every locally assigned partition.
+    #[must_use]
+    pub fn partitions(&self) -> Option<&BTreeSet<i32>> {
+        match &self.partitions {
+            PartitionSel::All => None,
+            PartitionSel::Set(set) => Some(set),
+        }
     }
 
     /// Query all locally assigned partitions (the default).
@@ -151,6 +161,21 @@ mod tests {
         assert_eq!(p.offset("in", 1), Some(5));
         assert_eq!(p.offset("in", 2), None); // present topic, absent partition
         assert_eq!(p.offset("other", 0), None); // absent topic
+    }
+
+    #[test]
+    fn partitions_reports_the_restriction() {
+        use assert2::check;
+
+        use crate::runtime::iqv2::query::KeyQuery;
+
+        let q = StateQueryRequest::in_store("s")
+            .with_query(KeyQuery::<String, i64>::with_key("k".into()));
+        check!(q.partitions().is_none());
+        let set: BTreeSet<i32> = [1, 3].into_iter().collect();
+        let q = q.with_partitions(set.clone());
+        check!(q.partitions() == Some(&set));
+        check!(q.with_all_partitions().partitions().is_none());
     }
 
     #[test]

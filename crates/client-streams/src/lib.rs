@@ -941,16 +941,28 @@
 //! materializes a table into a versioned key-value store. The store records
 //! out-of-order records as historical versions and keeps the latest version
 //! intact. `get_as_of` gives point-in-time reads.
+//!
+//! ## WebAssembly
+//!
+//! The topology, processor, DSL, store, barrier and test-driver layers build for
+//! `wasm32-unknown-unknown`, and [`EmbeddedTask`] drives one task's processor
+//! graph there with bytes an embedder fetches itself. The membership and
+//! runtime layers are Kafka network clients, so [`StreamsMembership`],
+//! [`KafkaStreams`], [`StreamsApp`], the Turso store backend, the file-backed
+//! snapshot store and the schema-registry serde bridge exist only on native
+//! targets.
 #![doc(html_root_url = "https://docs.rs/krabka-client-streams/0.4.0")]
 
 pub mod barrier;
 pub mod columnar;
 pub mod dsl;
+pub mod embedded;
 mod error;
 pub mod membership;
 pub mod processor;
 pub mod runtime;
 pub mod store;
+#[cfg(not(target_family = "wasm"))]
 pub mod streams_app;
 pub mod test_driver;
 pub mod topology;
@@ -969,40 +981,50 @@ pub use dsl::{
     StreamsBuilder, Suppressed, TimeWindowedCogroupedStream, TimeWindowedKGroupedStream,
     TimeWindowedSerde, TimeWindows, VersionedConfig, Window, Windowed,
 };
+pub use embedded::EmbeddedTask;
 pub use error::StreamsClientError;
+#[cfg(not(target_family = "wasm"))]
 pub use krabka_client_core::ClientDnsTimeout;
+#[cfg(not(target_family = "wasm"))]
 pub use membership::{
     DEFAULT_STREAMS_JOIN_RETRY_BACKOFF, DEFAULT_STREAMS_LEAVE_HEARTBEAT_TIMEOUT,
-    DEFAULT_STREAMS_REBALANCE_TIMEOUT, SchemaPrewarm, StreamsAssignment, StreamsEvent,
-    StreamsJoinRetryBackoff, StreamsLeaveHeartbeatTimeout, StreamsMembership,
-    StreamsRebalanceTimeout, StreamsStatus, TaskAssignment, TaskOffsetTracker, TopicPartition,
+    DEFAULT_STREAMS_REBALANCE_TIMEOUT, SchemaPrewarm, StreamsJoinRetryBackoff,
+    StreamsLeaveHeartbeatTimeout, StreamsMembership, StreamsRebalanceTimeout,
 };
+pub use membership::{
+    StreamsAssignment, StreamsEvent, StreamsStatus, TaskAssignment, TaskOffsetTracker,
+    TopicPartition,
+};
+#[cfg(not(target_family = "wasm"))]
+pub use processor::schema_serde::SchemaSerde;
 pub use processor::{
     BytesSerde, Cancellable, Consumed, DefaultSerde, FixedKeyProcessor, FixedKeyProcessorContext,
     FixedKeyProcessorSupplier, FixedKeyRecord, I64Serde, Processor, ProcessorContext,
     ProcessorError, ProcessorSupplier, Produced, PunctuationType, Punctuator, Record,
-    RecordContext, Serde, SerdeError, StringSerde, schema_serde::SchemaSerde,
+    RecordContext, Serde, SerdeError, StringSerde,
 };
+pub use runtime::iqv2::{
+    FailureReason, KeyQuery, MultiVersionedKeyQuery, Position, PositionBound, Query, QueryResult,
+    RangeQuery, StateQuery, StateQueryRequest, StateQueryResult, VersionedKeyQuery, WindowKeyQuery,
+    WindowRangeQuery,
+};
+#[cfg(not(target_family = "wasm"))]
 pub use runtime::{
     DEFAULT_STREAMS_COMMIT_INTERVAL, DEFAULT_STREAMS_INTERACTIVE_QUERY_QUEUE_CAPACITY,
     DEFAULT_STREAMS_POLL_INTERVAL, DEFAULT_STREAMS_STATE_STORE_CACHE_MAX_BYTES, KafkaStreams,
     MAX_STREAMS_STATE_STORE_CACHE_MAX_BYTES, ReadOnlyKeyValueStore, ReadOnlySessionStore,
     ReadOnlyWindowStore, StreamsCommitInterval, StreamsInteractiveQueryQueueCapacity,
-    StreamsPollInterval, StreamsStateStoreCacheMaxBytes,
-    eos::ProcessingGuarantee,
-    iq::IqError,
-    iqv2::{
-        FailureReason, KeyQuery, MultiVersionedKeyQuery, Position, PositionBound, Query,
-        QueryResult, RangeQuery, StateQuery, StateQueryRequest, StateQueryResult,
-        VersionedKeyQuery, WindowKeyQuery, WindowRangeQuery,
-    },
+    StreamsPollInterval, StreamsStateStoreCacheMaxBytes, eos::ProcessingGuarantee, iq::IqError,
 };
+#[cfg(not(target_family = "wasm"))]
+pub use store::snapshot::FileSnapshotStore;
 pub use store::{
     KeyValueBytesStore, KeyValueStore, StateStore, StoreBackend,
     iq::StoreKind,
-    snapshot::{FileSnapshotStore, NoSnapshotStore, SnapshotKey, SnapshotStore, TaskSnapshot},
+    snapshot::{NoSnapshotStore, SnapshotKey, SnapshotStore, TaskSnapshot},
     versioned::VersionedRecord,
 };
+#[cfg(not(target_family = "wasm"))]
 pub use streams_app::StreamsApp;
 pub use test_driver::TopologyTestDriver;
 pub use topology::{BuiltTopology, NodeHandle, Topology, TopologyError};
