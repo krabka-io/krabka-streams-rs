@@ -4,9 +4,12 @@ load(
     "./rustdoc_site.axl",
     "copy_tree",
     "find_rustdoc",
+    "html_escape",
     "landing_page",
     "landing_row",
     "manifest_field",
+    "normalize_path",
+    "output_problem",
     "problems",
     "redirect_page",
     "resolve_output",
@@ -42,7 +45,7 @@ rendered from the <code>main</code> branch.</p>
 <thead><tr><th>Crate</th><th>What it is</th></tr></thead>
 <tbody>
 <tr><td><a href="krabka-alpha/krabka_alpha/index.html"><code>krabka-alpha</code></a></td><td>The alpha crate, first of its name</td></tr>
-<tr><td><a href="krabka-beta/krabka_beta/index.html"><code>krabka-beta</code></a></td><td>The "beta" crate &amp; co.</td></tr>
+<tr><td><a href="krabka-beta/krabka_beta/index.html"><code>krabka-beta</code></a></td><td>The &quot;beta&quot; crate &amp; co.</td></tr>
 </tbody>
 </table>
 </html>
@@ -83,6 +86,10 @@ def _crate(package, name, rustdoc = "bazel-bin/x_doc.rustdoc", has_index = True,
         has_index = has_index,
     )
 
+def _package(line):
+    """A manifest whose `[package]` table holds `line`."""
+    return ["[package]", line]
+
 def _test_manifest_field_reads_the_package_section(_ctx):
     lines = [
         "[package]",
@@ -94,24 +101,80 @@ def _test_manifest_field_reads_the_package_section(_ctx):
     check_eq("the package name", manifest_field(lines, "name"), "krabka-log")
     check_eq("the description", manifest_field(lines, "description"), "The log")
 
-def _test_manifest_field_keeps_a_quote_inside_a_value(_ctx):
-    # The parser takes everything up to the line's last quote,
-    # so a description that quotes something keeps the quotes; the landing page
-    # carries them through verbatim.
-    check_eq(
-        "an inner quote",
-        manifest_field(['description = "The "beta" crate"'], "description"),
-        'The "beta" crate',
-    )
+def _test_manifest_field_decodes_basic_string_escapes(_ctx):
+    # (name, the TOML line, the decoded value)
+    cases = [
+        ("an escaped quote", 'description = "The \\"beta\\" crate"', 'The "beta" crate'),
+        ("an escaped backslash", 'description = "a\\\\b"', "a\\b"),
+        ("a backslash before the closing quote", 'description = "a\\\\"', "a\\"),
+        ("a newline", 'description = "a\\nb"', "a\nb"),
+        ("a tab", 'description = "a\\tb"', "a\tb"),
+        ("a carriage return", 'description = "a\\rb"', "a\rb"),
+        ("a backspace", 'description = "a\\bb"', "a\x08b"),
+        ("a form feed", 'description = "a\\fb"', "a\x0cb"),
+        ("a short unicode escape", 'description = "caf\\u00E9"', "caf\u00e9"),
+        ("a lowercase hex unicode escape", 'description = "\\u00e9"', "\u00e9"),
+        ("a long unicode escape", 'description = "\\U0001F980 crab"', "\U0001F980 crab"),
+        ("an escape-like literal", "description = 'a\\nb'", "a\\nb"),
+        ("a literal string", "description = 'The \"beta\" crate'", 'The "beta" crate'),
+    ]
+    for case in cases:
+        check_eq(case[0], manifest_field(_package(case[1]), "description"), case[2])
+
+def _test_manifest_field_rejects_malformed_strings(_ctx):
+    cases = [
+        ("an unknown escape", 'description = "a\\qb"'),
+        ("an escaped closing quote", 'description = "abc\\"'),
+        ("a multi-line string", 'description = """abc"""'),
+        ("a multi-line literal", "description = '''abc'''"),
+        ("not a string", "description = true"),
+        ("an unclosed value", 'description = "'),
+        ("a truncated unicode escape", 'description = "\\u00e"'),
+        ("a non-hex unicode escape", 'description = "\\u00zz"'),
+        ("a surrogate", 'description = "\\ud800"'),
+        ("beyond the last code point", 'description = "\\U00110000"'),
+        ("an unclosed literal", "description = 'abc"),
+    ]
+    for case in cases:
+        check_eq(case[0], manifest_field(_package(case[1]), "description"), "")
+
+def _test_manifest_field_tolerates_valid_toml_layout(_ctx):
+    cases = [
+        ("a trailing comment", 'name = "krabka-log" # package name', "krabka-log"),
+        ("a comment holding a quote", 'name = "x" # the "x" crate', "x"),
+        ("an indented key", '  name = "x"', "x"),
+        ("a tab-indented key", '\tname = "x"', "x"),
+        ("no spaces around the equals sign", 'name="x"', "x"),
+        ("extra spaces around the equals sign", 'name   =   "x"', "x"),
+        ("a literal string", "name = 'x'", "x"),
+        ("a literal string with a comment", "name = 'x' # why", "x"),
+        ("a literal string with a hash", "name = 'x # y'", "x # y"),
+        ("a basic string with a hash", 'name = "x # y"', "x # y"),
+        ("an empty value", 'description = ""', ""),
+    ]
+    for case in cases:
+        check_eq(case[0], manifest_field(_package(case[1]), "description" if case[1].strip().startswith("description") else "name"), case[2])
 
 def _test_manifest_field_ignores_what_it_cannot_parse(_ctx):
-    check_eq("no such field", manifest_field(['name = "krabka-log"'], "description"), "")
-    check_eq("workspace inheritance", manifest_field(["description.workspace = true"], "description"), "")
-    check_eq("an unclosed value", manifest_field(['description = "'], "description"), "")
-    check_eq("a trailing comment", manifest_field(['name = "x" # why'], "name"), "")
-    check_eq("an indented assignment", manifest_field(['  name = "x"'], "name"), "")
-    check_eq("a longer field name", manifest_field(['name-suffix = "x"'], "name"), "")
-    check_eq("an empty value", manifest_field(['description = ""'], "description"), "")
+    check_eq("no such field", manifest_field(_package('name = "krabka-log"'), "description"), "")
+    check_eq("workspace inheritance", manifest_field(_package("description.workspace = true"), "description"), "")
+    check_eq("a longer field name", manifest_field(_package('name-suffix = "x"'), "name"), "")
+    check_eq("a field that only starts with the name", manifest_field(_package('names = "x"'), "name"), "")
+    check_eq("no lines", manifest_field([], "name"), "")
+
+def _test_manifest_field_reads_only_the_package_table(_ctx):
+    cases = [
+        ("before any table", ['name = "top"', "[package]", 'version = "1"'], "name", ""),
+        ("after the package table", ["[package]", 'version = "1"', "[dependencies]", 'name = "dep"'], "name", ""),
+        ("a dependency table first", ["[dependencies]", 'name = "dep"', "[package]", 'name = "mine"'], "name", "mine"),
+        ("an array table", ["[[bin]]", 'name = "tool"', "[package]", 'name = "mine"'], "name", "mine"),
+        ("a header with a comment", ["[package] # the crate", 'name = "mine"'], "name", "mine"),
+        ("a spaced header", ["[ package ]", 'name = "mine"'], "name", "mine"),
+        ("a dotted table", ["[package.metadata]", 'name = "meta"'], "name", ""),
+        ("the first assignment wins", ["[package]", 'name = "one"', 'name = "two"'], "name", "one"),
+    ]
+    for case in cases:
+        check_eq(case[0], manifest_field(case[1], case[2]), case[3])
 
 def _test_snake_is_the_crates_module_name(_ctx):
     check_eq("one dash", snake("krabka-log"), "krabka_log")
@@ -149,12 +212,44 @@ def _test_landing_row(_ctx):
         '<tr><td><a href="krabka-log/krabka_log/index.html"><code>krabka-log</code></a></td><td>The log</td></tr>',
     )
 
+def _test_html_escape(_ctx):
+    check_eq("plain text", html_escape("The log"), "The log")
+    check_eq("ampersand first", html_escape("a & b &amp; c"), "a &amp; b &amp;amp; c")
+    check_eq(
+        "every special character",
+        html_escape("<a href=\"x\">'&'</a>"),
+        "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;",
+    )
+
+def _test_landing_row_escapes_manifest_text(_ctx):
+    check_eq(
+        "an escaped description",
+        landing_row(_row("krabka-log", 'Types like Vec<T> & "co"')),
+        '<tr><td><a href="krabka-log/krabka_log/index.html"><code>krabka-log</code></a></td><td>Types like Vec&lt;T&gt; &amp; &quot;co&quot;</td></tr>',
+    )
+    check_eq(
+        "an escaped name",
+        landing_row(struct(name = "a<b", snake = "a<b", description = "")),
+        '<tr><td><a href="a&lt;b/a&lt;b/index.html"><code>a&lt;b</code></a></td><td></td></tr>',
+    )
+
+def _test_redirect_page_escapes_manifest_text(_ctx):
+    check_eq(
+        "an escaped name",
+        redirect_page("a<b", "a<b"),
+        "<!doctype html>\n" +
+        '<meta charset="utf-8">\n' +
+        '<meta http-equiv="refresh" content="0; url=a&lt;b/index.html">\n' +
+        "<title>a&lt;b</title>\n" +
+        '<a href="a&lt;b/index.html">a&lt;b</a>\n',
+    )
+
 def _test_landing_page(_ctx):
     check_eq(
         "the landing page",
         landing_page([
             _row("krabka-alpha", "The alpha crate, first of its name"),
-            _row("krabka-beta", 'The "beta" crate &amp; co.'),
+            _row("krabka-beta", 'The "beta" crate & co.'),
         ]),
         _LANDING_PAGE,
     )
@@ -207,6 +302,27 @@ def _test_resolve_output(_ctx):
     check_eq("nested", resolve_output("/w", "build/site"), "/w/build/site")
     check_eq("absolute", resolve_output("/w", "/var/www/site"), "/var/www/site")
 
+def _test_normalize_path(_ctx):
+    cases = [
+        ("already normal", "/w/site", "/w/site"),
+        ("dot segments", "/w/./site/.", "/w/site"),
+        ("parent segments", "/w/a/../site", "/w/site"),
+        ("repeated slashes", "/w//site///x", "/w/site/x"),
+        ("above the root", "/../..", "/"),
+        ("the root", "/", "/"),
+    ]
+    for case in cases:
+        check_eq(case[0], normalize_path(case[1]), case[2])
+
+def _test_output_problem_rejects_unsafe_directories(_ctx):
+    for output in [".", "..", "/", "/w", "/w/", "/", "../sibling", "crates", ".git", ".github", ".aspect", "bazel", "crates/site", "bazel-bin", "a/../crates", "site/..", "/w/./crates", "/wx"]:
+        if output_problem("/w", resolve_output("/w", output)) == "":
+            fail("output %r was accepted" % output)
+
+def _test_output_problem_accepts_a_fresh_subdirectory(_ctx):
+    for output in ["site", "out/site", "/w/site", "./site", "a/../site", "sites/crates"]:
+        check_eq("output " + output, output_problem("/w", resolve_output("/w", output)), "")
+
 def _test_copy_tree_reproduces_the_whole_subtree(ctx):
     fs = ctx.std.fs
     root = temp_tree(ctx, {
@@ -250,14 +366,20 @@ def _test_copy_tree_keeps_the_executable_bit(ctx):
 
 rustdoc_site_tests = suite("rustdoc-site", [
     _test_manifest_field_reads_the_package_section,
-    _test_manifest_field_keeps_a_quote_inside_a_value,
+    _test_manifest_field_decodes_basic_string_escapes,
+    _test_manifest_field_rejects_malformed_strings,
+    _test_manifest_field_tolerates_valid_toml_layout,
     _test_manifest_field_ignores_what_it_cannot_parse,
+    _test_manifest_field_reads_only_the_package_table,
     _test_snake_is_the_crates_module_name,
     _test_find_rustdoc_picks_the_doc_directory,
     _test_find_rustdoc_without_one,
     _test_find_rustdoc_is_deterministic,
     _test_redirect_page,
+    _test_html_escape,
     _test_landing_row,
+    _test_landing_row_escapes_manifest_text,
+    _test_redirect_page_escapes_manifest_text,
     _test_landing_page,
     _test_landing_page_without_crates,
     _test_a_documented_crate_has_no_problem,
@@ -266,6 +388,9 @@ rustdoc_site_tests = suite("rustdoc-site", [
     _test_a_nameless_manifest_is_reported_once,
     _test_every_crate_is_reported_not_only_the_first,
     _test_resolve_output,
+    _test_normalize_path,
+    _test_output_problem_rejects_unsafe_directories,
+    _test_output_problem_accepts_a_fresh_subdirectory,
     _test_copy_tree_reproduces_the_whole_subtree,
     _test_copy_tree_leaves_the_copy_writable,
     _test_copy_tree_keeps_the_executable_bit,
