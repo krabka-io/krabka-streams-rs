@@ -1,0 +1,86 @@
+"""Filesystem helpers shared by this repository's `.axl` tasks.
+
+`ctx.std.fs` offers `read_dir` and nothing above it: no glob, no recursive
+walk. Every task that has to sweep a subtree needs the same guarded recursion,
+so it lives here once. The guard is the skip predicate -- `bazel-bin` and its
+siblings are symlinks into an output tree of hundreds of thousands of files,
+and `read_dir` follows a symlink, so a walk that descends into one does not
+come back.
+"""
+
+# Directory names the default predicate never descends into: Bazel's
+# `bazel-*` convenience symlinks, Cargo's output tree, and everything hidden.
+_SKIPPED_NAMES = ["target", "node_modules"]
+
+def default_skip_dir(name):
+    """Whether a directory named `name` is one the default walk steps over."""
+    return name in _SKIPPED_NAMES or name.startswith("bazel-") or name.startswith(".")
+
+def walk(fs, root, relative_to = None, skip_dir = None):
+    """Every file under `root`, as paths relative to `relative_to`, sorted.
+
+    `relative_to` defaults to `root`, so the result is `root`-relative.
+    `skip_dir` is an optional predicate over a directory's base name; the
+    default is `default_skip_dir`.
+    """
+    base = root if relative_to == None else relative_to
+    skip = default_skip_dir if skip_dir == None else skip_dir
+
+    prefix = ""
+    if root.startswith(base + "/"):
+        prefix = root[len(base) + 1:] + "/"
+    elif root != base:
+        fail("walk: %s is not under %s" % (root, base))
+
+    found = []
+    pending = [(root, prefix)]
+
+    # Starlark has no `while` and forbids recursion, so the frontier is drained
+    # by a bounded sweep whose exhaustion is itself an error rather than a
+    # silently short result.
+    for _ in range(100000):
+        if not pending:
+            break
+        directory, relative = pending.pop()
+        for entry in fs.read_dir(directory):
+            if entry.is_dir:
+                if not skip(entry.path):
+                    pending.append((directory + "/" + entry.path, relative + entry.path + "/"))
+            elif entry.is_file:
+                found.append(relative + entry.path)
+    if pending:
+        fail("walk: %s holds more directories than this sweep can reach" % root)
+    return sorted(found)
+
+def walk_suffix(fs, root, suffix, relative_to = None, skip_dir = None):
+    """`walk`, narrowed to the files whose path ends with `suffix`."""
+    return [
+        path
+        for path in walk(fs, root, relative_to = relative_to, skip_dir = skip_dir)
+        if path.endswith(suffix)
+    ]
+
+def is_file(fs, path):
+    """Whether `path` exists and is a regular file.
+
+    `fs.is_file` is deprecated in favour of `fs.metadata`, and `fs.metadata`
+    fails on a path that is not there, so the two go together.
+    """
+    return fs.exists(path) and fs.metadata(path).is_file
+
+def read_lines(fs, path):
+    """The file's lines, without their terminators."""
+    return fs.read_to_string(path).splitlines()
+
+def starts_with_any(value, prefixes):
+    for prefix in prefixes:
+        if value.startswith(prefix):
+            return True
+    return False
+
+def basename(path):
+    return path.rsplit("/", 1)[-1]
+
+def dirname(path):
+    parts = path.rsplit("/", 1)
+    return parts[0] if len(parts) == 2 else ""
