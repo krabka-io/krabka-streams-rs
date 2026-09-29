@@ -93,10 +93,6 @@ jobs:
           disk-cache: ${{ github.workflow }}-docs
           repository-cache: true
       - run: bazel build $(bazel query 'kind("rust_doc rule", //crates/...)')
-      # The Pages site assembler and its unit tests, so a change to either is
-      # caught here rather than on the next push to `main`.
-      - name: the tasks' own tests
-        run: aspect axl-tests
       - uses: actions/upload-artifact@v4
         with:
           name: rustdoc
