@@ -18,9 +18,7 @@ use std::sync::Arc;
 use krabka_client_core::{Client, ClientError};
 use krabka_protocol::owned::{
     common::{
-        streams_group_heartbeat_request::{
-            task_ids::TaskIds as ReqTaskIds, task_offset::TaskOffset,
-        },
+        streams_group_heartbeat_request::task_ids::TaskIds as ReqTaskIds,
         streams_group_heartbeat_response::task_ids::TaskIds as RespTaskIds,
     },
     streams_group_heartbeat_request::StreamsGroupHeartbeatRequest,
@@ -230,50 +228,19 @@ async fn reset_for_rejoin<T: HeartbeatTransport>(state: &CoordinatorState<T>) {
 async fn heartbeat_once<T: HeartbeatTransport>(state: &CoordinatorState<T>) -> Outcome {
     let epoch = *state.member_epoch.lock().await;
 
-    let (task_offsets, task_end_offsets) = {
-        let tracker = state.tracker.lock().await;
-        let to_wire =
-            |map: &std::collections::HashMap<(String, i32), i64>| -> Option<Vec<TaskOffset>> {
-                if map.is_empty() {
-                    None
-                } else {
-                    let mut list: Vec<TaskOffset> = map
-                        .iter()
-                        .map(|(key, &offset)| TaskOffset {
-                            subtopology_id: key.0.clone(),
-                            partition: key.1,
-                            offset,
-                            ..Default::default()
-                        })
-                        .collect();
-                    list.sort_by(|a, b| match a.subtopology_id.cmp(&b.subtopology_id) {
-                        std::cmp::Ordering::Equal => a.partition.cmp(&b.partition),
-                        other => other,
-                    });
-                    Some(list)
-                }
-            };
-        (
-            to_wire(&tracker.task_offsets),
-            to_wire(&tracker.task_end_offsets),
-        )
-    };
-
+    // Kafka 4.3.1 rejects non-null TaskOffsets and TaskEndOffsets. The runtime's
+    // changelog positions stay in the local tracker.
     let req = if epoch == 0 {
         // The first heartbeat after a join reports the owned tasks.
         *state.last_sent_tasks.lock().await = None;
-        StreamsGroupHeartbeatRequest {
-            task_offsets,
-            task_end_offsets,
-            ..join_heartbeat(
-                &state.group_id,
-                &state.member_id,
-                &state.process_id,
-                state.instance_id.clone(),
-                state.rebalance_timeout,
-                &state.topology,
-            )
-        }
+        join_heartbeat(
+            &state.group_id,
+            &state.member_id,
+            &state.process_id,
+            state.instance_id.clone(),
+            state.rebalance_timeout,
+            &state.topology,
+        )
     } else {
         let [active_tasks, standby_tasks, warmup_tasks] =
             TaskLists::into_fields(changed_task_lists(state).await);
@@ -287,8 +254,6 @@ async fn heartbeat_once<T: HeartbeatTransport>(state: &CoordinatorState<T>) -> O
             active_tasks,
             standby_tasks,
             warmup_tasks,
-            task_offsets,
-            task_end_offsets,
             ..Default::default()
         }
     };
@@ -607,6 +572,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn heartbeat_keeps_task_offsets_local() {
+        for epoch in [0, 7] {
+            let fake = FakeTransport::new(vec![ok_resp(9, vec![0])]);
+            let sent = fake.sent_arc();
+            let (state, _rx) = state_with(fake);
+            *state.member_epoch.lock().await = epoch;
+            {
+                let mut tracker = state.tracker.lock().await;
+                tracker.task_offsets.insert(("0".into(), 0), 5);
+                tracker.task_end_offsets.insert(("0".into(), 0), 10);
+            }
+
+            check!(matches!(heartbeat_once(&state).await, Outcome::Ok));
+            {
+                let sent = sent.lock().unwrap();
+                check!(sent[0].task_offsets.is_none());
+                check!(sent[0].task_end_offsets.is_none());
+                check!(kafka_refusal(&sent[0]).is_none());
+            }
+            let tracker = state.tracker.lock().await;
+            check!(tracker.task_offsets.get(&("0".into(), 0)) == Some(&5));
+            check!(tracker.task_end_offsets.get(&("0".into(), 0)) == Some(&10));
+        }
+    }
+
+    #[tokio::test]
     async fn heartbeat_fenced_member_epoch_requests_rejoin() {
         let fake = FakeTransport::new(vec![err_resp(110)]);
         let (st, _rx) = state_with(fake);
@@ -687,6 +678,12 @@ mod tests {
     /// (Apache Kafka 4.1 through 4.3) that the shape of a heartbeat decides,
     /// with Kafka's messages. `None` when Kafka accepts the request.
     fn kafka_refusal(req: &StreamsGroupHeartbeatRequest) -> Option<&'static str> {
+        if req.task_offsets.is_some() {
+            return Some("TaskOffsets are not supported yet.");
+        }
+        if req.task_end_offsets.is_some() {
+            return Some("TaskEndOffsets are not supported yet.");
+        }
         // `throwIfNotEmptyCollection` refuses a null list as well as a
         // non-empty one.
         let not_empty =
