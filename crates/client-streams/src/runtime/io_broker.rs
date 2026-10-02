@@ -514,6 +514,7 @@ impl TransactionalProducer for BrokerTransactionalProducer {
 pub(crate) struct BrokerOffsetStore {
     client: Client,
     group_id: String,
+    group_metadata: Mutex<Option<StreamsGroupMeta>>,
     /// Cache of topic name → `topic_id`. A metadata refresh fills it lazily.
     topic_ids: Mutex<HashMap<String, WireUuid>>,
 }
@@ -525,8 +526,14 @@ impl BrokerOffsetStore {
         Self {
             client,
             group_id: group_id.into(),
+            group_metadata: Mutex::new(None),
             topic_ids: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Refresh the member identity and epoch before committing assigned tasks.
+    pub(crate) async fn update_group_metadata(&self, metadata: StreamsGroupMeta) {
+        *self.group_metadata.lock().await = Some(metadata);
     }
 
     /// Looks up the `topic_id` for `topic`. On a cache miss, this method
@@ -760,12 +767,16 @@ impl OffsetStore for BrokerOffsetStore {
             })
             .collect();
 
+        let metadata = self.group_metadata.lock().await.clone();
         let resp = self
             .client
             .send(OffsetCommitRequest {
                 group_id: self.group_id.clone(),
-                generation_id_or_member_epoch: -1,
-                member_id: String::new(),
+                generation_id_or_member_epoch: metadata.as_ref().map_or(-1, |m| m.generation),
+                member_id: metadata
+                    .as_ref()
+                    .map_or_else(String::new, |m| m.member.clone()),
+                group_instance_id: metadata.and_then(|m| m.group_instance),
                 topics,
                 ..Default::default()
             })
@@ -1067,7 +1078,8 @@ mod tests {
     /// implementation.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn offset_store_commits_and_reads_back() {
-        let (_broker, bootstrap, _dir) = boot().await;
+        let (broker, bootstrap, _dir) = boot().await;
+        broker.wait_until_group_coordinator_ready().await;
 
         // Admin client: create the topic so topic_id is resolvable.
         let admin = Client::builder()

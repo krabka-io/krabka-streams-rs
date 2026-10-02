@@ -287,7 +287,7 @@ fn validate_runtime_configuration(
 pub struct KafkaStreams {
     member_id: String,
     shutdown: CancellationToken,
-    handle: JoinHandle<()>,
+    handle: JoinHandle<Result<(), StreamsClientError>>,
     /// Channel to the supervisor for interactive queries. The `KafkaStreams` IQ
     /// accessors read it.
     iq_tx: mpsc::Sender<IqRequest>,
@@ -383,7 +383,7 @@ impl KafkaStreams {
         // is `None`.
         let fetcher: Arc<dyn RecordFetcher>;
         let producer: Arc<dyn RecordProducer>;
-        let store: Arc<dyn OffsetStore>;
+        let store: Arc<io_broker::BrokerOffsetStore>;
         let txn: Option<Arc<dyn TransactionalProducer>>;
         match processing_guarantee {
             ProcessingGuarantee::AtLeastOnce => {
@@ -418,6 +418,9 @@ impl KafkaStreams {
                 store = s;
             }
         }
+
+        let offset_store = Arc::clone(&store);
+        let store: Arc<dyn OffsetStore> = store;
 
         // Join the streams group (membership owns the heartbeat loop).
         let mut membership = StreamsMembership::builder()
@@ -465,12 +468,17 @@ impl KafkaStreams {
                 tokio::select! {
                     () = sd.cancelled() => {
                         // EOS close aborts any in-flight txn (meta unused); ALO commits.
-                        let _ = thread.close_all(None).await;
-                        let _ = membership.close().await;
+                        let meta = membership.group_metadata().await;
+                        offset_store.update_group_metadata(meta.clone()).await;
+                        let closed = thread.close_all(Some(&meta)).await;
+                        let left = membership.close().await;
+                        closed?;
+                        left?;
                         break;
                     }
                     ev = membership.next_event() => match ev {
                         Ok(StreamsEvent::Assigned(a)) => {
+                            offset_store.update_group_metadata(membership.group_metadata().await).await;
                             if let Err(e) = thread
                                 .apply_assignment(
                                     &a,
@@ -496,13 +504,10 @@ impl KafkaStreams {
                     }
                     _ = commit.tick() => {
                         // EOS commit folds offsets into the txn — needs the live
-                        // streams group metadata; ALO ignores it.
-                        let meta = if is_eos {
-                            Some(membership.group_metadata().await)
-                        } else {
-                            None
-                        };
-                        if let Err(e) = thread.commit_all(meta.as_ref()).await {
+                        // streams group metadata; ALO puts it on OffsetCommit.
+                        let meta = membership.group_metadata().await;
+                        offset_store.update_group_metadata(meta.clone()).await;
+                        if let Err(e) = thread.commit_all(is_eos.then_some(&meta)).await {
                             tracing::warn!(error = %e, "commit_all failed");
                         }
                     }
@@ -524,6 +529,7 @@ impl KafkaStreams {
                     }
                 }
             }
+            Ok(())
         });
 
         Ok(Self {
@@ -688,8 +694,9 @@ impl KafkaStreams {
     /// Returns an error when configuration is invalid, protocol encoding fails, the broker rejects the request, or transport I/O fails.
     pub async fn close(self) -> Result<(), StreamsClientError> {
         self.shutdown.cancel();
-        let _ = self.handle.await;
-        Ok(())
+        self.handle.await.map_err(|error| {
+            StreamsClientError::Runtime(format!("streams supervisor failed: {error}"))
+        })?
     }
 
     /// Stop the runtime without committing, aborting transactions, or leaving
