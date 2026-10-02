@@ -413,16 +413,22 @@ async fn emit_response<T: HeartbeatTransport>(
 
 /// Build the assignment from a heartbeat response and decide whether it changed
 /// since `last`. Returns the event to emit, or `None` when nothing changed.
+/// An omitted role keeps its previous assignment; an explicit empty list clears it.
 fn assignment_event(
     r: &StreamsGroupHeartbeatResponse,
     topology: &BuiltTopology,
     last: &mut StreamsAssignment,
 ) -> Option<StreamsEvent> {
-    let assignment = StreamsAssignment {
-        active: resolve(r.active_tasks.as_ref(), topology),
-        standby: resolve(r.standby_tasks.as_ref(), topology),
-        warmup: resolve(r.warmup_tasks.as_ref(), topology),
-    };
+    let mut assignment = last.clone();
+    if let Some(tasks) = &r.active_tasks {
+        assignment.active = resolve(Some(tasks), topology);
+    }
+    if let Some(tasks) = &r.standby_tasks {
+        assignment.standby = resolve(Some(tasks), topology);
+    }
+    if let Some(tasks) = &r.warmup_tasks {
+        assignment.warmup = resolve(Some(tasks), topology);
+    }
     if assignment == *last {
         None
     } else {
@@ -1093,6 +1099,66 @@ mod tests {
         let r = resp_plain(vec![0, 1]);
         check!(assignment_event(&r, &topo, &mut last).is_some());
         check!(assignment_event(&r, &topo, &mut last).is_none());
+    }
+
+    #[test]
+    fn omitted_assignment_roles_leave_the_previous_assignment_unchanged() {
+        let topo = built_plain();
+        let active = resp_plain(vec![0]).active_tasks;
+        let standby = resp_plain(vec![1]).active_tasks;
+        let warmup = resp_plain(vec![2]).active_tasks;
+        let mut last = StreamsAssignment::default();
+        let initial = StreamsGroupHeartbeatResponse {
+            active_tasks: active,
+            standby_tasks: standby,
+            warmup_tasks: warmup,
+            ..Default::default()
+        };
+        check!(assignment_event(&initial, &topo, &mut last).is_some());
+        let previous = last.clone();
+
+        check!(
+            assignment_event(&StreamsGroupHeartbeatResponse::default(), &topo, &mut last).is_none()
+        );
+        check!(last == previous);
+    }
+
+    #[test]
+    fn explicit_empty_assignment_clears_only_the_role_the_response_names() {
+        let topo = built_plain();
+        let initial = StreamsGroupHeartbeatResponse {
+            active_tasks: resp_plain(vec![0]).active_tasks,
+            standby_tasks: resp_plain(vec![1]).active_tasks,
+            warmup_tasks: resp_plain(vec![2]).active_tasks,
+            ..Default::default()
+        };
+        let mut previous = StreamsAssignment::default();
+        check!(assignment_event(&initial, &topo, &mut previous).is_some());
+
+        for role in 0..3 {
+            let mut response = StreamsGroupHeartbeatResponse::default();
+            let mut expected = previous.clone();
+            match role {
+                0 => {
+                    response.active_tasks = Some(Vec::new());
+                    expected.active.clear();
+                }
+                1 => {
+                    response.standby_tasks = Some(Vec::new());
+                    expected.standby.clear();
+                }
+                _ => {
+                    response.warmup_tasks = Some(Vec::new());
+                    expected.warmup.clear();
+                }
+            }
+            let mut last = previous.clone();
+            check!(
+                assignment_event(&response, &topo, &mut last)
+                    == Some(StreamsEvent::Assigned(expected.clone()))
+            );
+            check!(last == expected);
+        }
     }
 
     #[test]
