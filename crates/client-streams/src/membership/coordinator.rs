@@ -863,6 +863,28 @@ mod tests {
     }
 
     #[test]
+    fn kafka_refuses_non_null_task_offsets_even_when_empty() {
+        for (req, refusal) in [
+            (
+                StreamsGroupHeartbeatRequest {
+                    task_offsets: Some(vec![]),
+                    ..expected_join(None)
+                },
+                "TaskOffsets are not supported yet.",
+            ),
+            (
+                StreamsGroupHeartbeatRequest {
+                    task_end_offsets: Some(vec![]),
+                    ..expected_steady(3, None)
+                },
+                "TaskEndOffsets are not supported yet.",
+            ),
+        ] {
+            check!(kafka_refusal(&req) == Some(refusal));
+        }
+    }
+
+    #[test]
     fn join_heartbeat_is_the_join_that_kafka_accepts() {
         for instance_id in [None, Some("instance-1")] {
             let req = join_heartbeat(

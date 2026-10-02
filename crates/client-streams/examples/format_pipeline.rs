@@ -222,6 +222,20 @@ fn extract_i64(col: &Column, i: usize) -> i64 {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
+    // The conversion matches Rust's saturating float-to-integer semantics,
+    // including non-finite amounts, before the wire-format pipeline runs.
+    for (amount, expected) in [
+        (1.125, 113),
+        (-1.125, -113),
+        (f64::NAN, 0),
+        (f64::INFINITY, i64::MAX),
+        (f64::NEG_INFINITY, i64::MIN),
+        (f64::MAX, i64::MAX),
+        (-f64::MAX, i64::MIN),
+    ] {
+        assert!(amount_cents(amount) == expected);
+    }
+
     let boot = boot().await;
     let bootstrap = boot.bootstrap.clone();
 
