@@ -62,6 +62,19 @@ mod orders {
 }
 use orders::{OrderProto, OrderSummary};
 
+fn amount_cents(amount: f64) -> i64 {
+    let rounded = (amount * 100.0).round();
+    format!("{rounded:.0}").parse().unwrap_or_else(|_| {
+        if rounded.is_nan() {
+            0
+        } else if rounded.is_sign_negative() {
+            i64::MIN
+        } else {
+            i64::MAX
+        }
+    })
+}
+
 // docs:begin arrow-codec
 /// Source codec. Each Kafka record value is an Arrow-IPC `RecordBatch`, and this
 /// codec decodes them into one Polars `DataFrame` that the columnar engine can
@@ -224,12 +237,13 @@ async fn main() {
         admin
             .create_topics(
                 &[CreateTopicSpec {
+                    replica_assignments: BTreeMap::new(),
                     name: t.into(),
                     partitions: 1,
                     replicas: 1,
                     configs: BTreeMap::new(),
                 }],
-                krabka_units::secs(5),
+                krabka_client_admin::TopicMutationOptions::with_timeout(krabka_units::secs(5)),
             )
             .await
             .expect("create topic");
@@ -297,7 +311,7 @@ async fn main() {
         let proto = OrderProto {
             order_id: ev.order_id,
             user: ev.user,
-            amount_cents: (ev.amount * 100.0).round() as i64,
+            amount_cents: amount_cents(ev.amount),
             currency: ev.currency.to_uppercase(),
             ts_ms: ev.ts_ms,
         };
@@ -350,7 +364,7 @@ async fn main() {
             value: v,
             timestamp: 0,
             partition: 0,
-            offset: i as i64,
+            offset: i64::try_from(i).expect("record offset fits in i64"),
         })
         .collect();
 
@@ -369,14 +383,14 @@ async fn main() {
     );
     topo.add_sink("out", "orders.summary.df", BlobCodec::default(), agg);
     let built = topo.build().expect("build columnar");
-    let produced = built
+    let outputs = built
         .run_batch("orders.arrow", &consumed)
         .expect("run_batch");
     // docs:end stage-c-arrow-polars
 
     // docs:begin stage-d-polars-proto
     // Stage D — Polars -> Protobuf: each aggregated row becomes an OrderSummary.
-    for (_topic, rec) in produced {
+    for (_topic, rec) in outputs {
         let df = PolarsIpcSerde
             .deserialize("orders.summary.df", &rec.value)
             .expect("polars decode");

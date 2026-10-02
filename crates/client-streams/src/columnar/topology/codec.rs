@@ -45,14 +45,24 @@ pub struct BatchError(pub String);
 pub trait BatchCodec: Send + Sync + 'static {
     /// Assemble the consumed records, in offset order, into one `DataFrame` that
     /// includes the reserved metadata columns.
+    ///
+    /// # Errors
+    /// Returns a decoding or frame assembly error, including reserved payload
+    /// column collisions.
     fn decode(&self, records: &[ConsumedRecord]) -> Result<DataFrame, BatchError>;
     /// Decompose an output `DataFrame` into produce records.
+    ///
+    /// # Errors
+    /// Returns an error if the frame cannot be decomposed or encoded by this codec.
     fn encode(&self, df: &DataFrame) -> Result<Vec<ProduceRecord>, BatchError>;
 }
 
 /// Returns `Err` when `df_columns` holds a name that collides with a reserved
 /// metadata column. The codecs (Tasks 6–7) and the topology builder (Task 9)
 /// share this function.
+///
+/// # Errors
+/// Returns the first reserved metadata column collision.
 pub fn reject_reserved_payload_columns(df_columns: &[&str]) -> Result<(), BatchError> {
     for name in df_columns {
         if RESERVED_COLUMNS.contains(name) {
@@ -164,8 +174,8 @@ fn chunk_by_size(df: &DataFrame, cap: usize) -> Vec<DataFrame> {
     }
     let mid = df.height() / 2;
     let mut out = chunk_by_size(&df.slice(0, mid), cap);
-    // `mid` is at most `df.height() / 2`, which fits in i64 on any real frame.
-    let mid_i64 = mid as i64;
+    // Half a usize fits in i64 on supported 32- and 64-bit targets.
+    let mid_i64 = i64::try_from(mid).expect("half a frame's height fits in i64");
     out.extend(chunk_by_size(&df.slice(mid_i64, df.height() - mid), cap));
     out
 }
