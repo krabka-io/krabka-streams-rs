@@ -119,14 +119,15 @@ async fn produce(producer: &krabka_client_producer::Producer, vals: &[&str]) {
     for val in vals {
         drop(
             producer
-                .send(krabka_client_producer::ProducerRecord {
+                .enqueue(krabka_client_producer::ProducerRecord {
                     topic: IN_TOPIC.into(),
                     partition: Some(0),
                     key: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
                     value: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
                     ..Default::default()
                 })
-                .await,
+                .await
+                .expect("record is queued"),
         );
     }
     producer.flush().await.unwrap();

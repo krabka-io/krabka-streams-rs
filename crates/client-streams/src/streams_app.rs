@@ -206,7 +206,7 @@ impl StreamsApp {
     /// Returns an error when configuration is invalid, protocol encoding fails, the broker rejects the request, or transport I/O fails.
     pub async fn run(self, builder: StreamsBuilder) -> Result<KafkaStreams, StreamsClientError> {
         let built = builder.build(&self.application_id)?;
-        self.run_built(built).await
+        Box::pin(self.run_built(built)).await
     }
 
     /// Like [`run`](Self::run), but for a topology that the Processor API has

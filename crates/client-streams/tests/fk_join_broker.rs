@@ -88,14 +88,15 @@ async fn create_topic(client: &Client, topic: &str, partitions: i32) {
 async fn produce(producer: &krabka_client_producer::Producer, topic: &str, key: &str, val: &str) {
     drop(
         producer
-            .send(krabka_client_producer::ProducerRecord {
+            .enqueue(krabka_client_producer::ProducerRecord {
                 topic: topic.into(),
                 partition: Some(0),
                 key: Some(bytes::Bytes::copy_from_slice(key.as_bytes())),
                 value: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
                 ..Default::default()
             })
-            .await,
+            .await
+            .expect("record is queued"),
     );
     producer.flush().await.unwrap();
 }

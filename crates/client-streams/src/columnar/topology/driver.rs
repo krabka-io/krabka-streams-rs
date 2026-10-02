@@ -35,13 +35,12 @@ impl<'t> ColumnarTestDriver<'t> {
     ///
     /// # Errors
     /// Returns the codec/operator error string if processing the batch fails.
-    // Takes the batch by value (the driver owns piped input, like `TopologyTestDriver`);
-    // `run_batch` only needs a borrow, hence the lint suppression.
     pub fn pipe_batch(&mut self, topic: &str, records: Vec<ConsumedRecord>) -> Result<(), String> {
         let produced = self
             .built
             .run_batch(topic, &records)
             .map_err(|e| e.to_string())?;
+        drop(records);
         for (sink_topic, rec) in produced {
             self.output.entry(sink_topic).or_default().push(rec);
         }

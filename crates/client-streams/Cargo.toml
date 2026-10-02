@@ -91,7 +91,7 @@ required-features = ["polars", "arrow"]
 [dev-dependencies]
 assert2 = { workspace = true }
 apache-avro = { workspace = true, features = ["derive"] }
-krabka-broker = { version = "0.4.0", features = ["test-helpers"] }
+krabka-broker = { version = "0.6.1", features = ["test-helpers"] }
 # Dev-only path dependency. Keep the crates.io requirement on the released
 # minor line so `cargo publish` can package this crate even when release-plz
 # publishes dev-dependency-only workspace crates later in the same run.
@@ -100,7 +100,7 @@ krabka-client-admin = { version = "0.4.0" }
 # crate is not published, so it has no crates.io version. It comes from the
 # same revision as the `krabka-schema-serde` patch in the workspace manifest.
 # `cargo publish` drops a dev dependency that has no version.
-krabka-schema-registry = { git = "https://github.com/krabka-io/krabka-schema-registry", rev = "ee9c3933fb1d71735846e7e5e33ea6ab3a694dc5" }
+krabka-schema-registry = { git = "https://github.com/krabka-io/krabka-schema-registry", rev = "a7b5964f7536b07a36a1f440d4af65c0bf6609dd" }
 hex = { workspace = true }
 mutants = { workspace = true }
 prost = { workspace = true }

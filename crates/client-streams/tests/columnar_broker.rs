@@ -29,6 +29,7 @@ use krabka_protocol::{
     },
     primitives::uuid::Uuid as WireUuid,
 };
+use krabka_units::{mebibytes, millis};
 use polars::prelude::*;
 
 // ─── broker boot helpers (mirror tests/runtime_integration.rs) ────────────────
@@ -134,8 +135,8 @@ impl RecordFetcher for BrokerFetchAdapter {
                 self.topic_id,
                 partition,
                 offset,
-                500,
-                1 << 20,
+                millis(500),
+                mebibytes(1),
             )
             .await
             .map_err(|e| StreamsClientError::Runtime(e.to_string()))?;
@@ -179,14 +180,15 @@ impl RecordProducer for BrokerProduceAdapter {
         // barrier (mirrors tests/runtime_integration.rs), so drop the receiver.
         drop(
             self.producer
-                .send(ProducerRecord {
+                .enqueue(ProducerRecord {
                     topic: topic.into(),
                     partition: partition.or(Some(0)),
                     key,
                     value,
                     ..Default::default()
                 })
-                .await,
+                .await
+                .expect("record is queued"),
         );
         Ok(())
     }
@@ -235,14 +237,15 @@ async fn columnar_runtime_bridge_against_live_broker() {
         let value = PolarsIpcSerde.serialize("", &df);
         drop(
             producer
-                .send(ProducerRecord {
+                .enqueue(ProducerRecord {
                     topic: "in".into(),
                     partition: Some(0),
                     key: None,
                     value: Some(value),
                     ..Default::default()
                 })
-                .await,
+                .await
+                .expect("record is queued"),
         );
     }
     producer.flush().await.unwrap();
@@ -275,9 +278,17 @@ async fn columnar_runtime_bridge_against_live_broker() {
     let mut total_rows = 0usize;
     let mut next_offset = 0i64;
     'poll: for _ in 0..50 {
-        let recs = fetch_partition(&reader, "out", out_id, 0, next_offset, 500, 1 << 20)
-            .await
-            .unwrap_or_default();
+        let recs = fetch_partition(
+            &reader,
+            "out",
+            out_id,
+            0,
+            next_offset,
+            millis(500),
+            mebibytes(1),
+        )
+        .await
+        .unwrap_or_default();
         for r in &recs {
             if let Some(v) = &r.value {
                 let df = PolarsIpcSerde.deserialize("", v).unwrap();

@@ -8,7 +8,7 @@ use krabka_client_core::{
     Client, ClientDnsTimeout, ClientFrameMax, ConnectionDispatchQueueCapacity,
     DEFAULT_FETCH_RESPONSE_MAX, FetchMinBytes, IsolatedFetch,
 };
-use krabka_client_producer::{Acks, Producer, ProducerError, ProducerRecord, RecordMetadata};
+use krabka_client_producer::{Acks, DeliveryHandle, Producer, ProducerRecord};
 use krabka_protocol::{
     owned::{
         list_offsets_request::{ListOffsetsPartition, ListOffsetsRequest, ListOffsetsTopic},
@@ -23,7 +23,7 @@ use krabka_protocol::{
     primitives::uuid::Uuid as WireUuid,
 };
 use krabka_units::prelude::*;
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::Mutex;
 
 use crate::{
     error::StreamsClientError,
@@ -257,12 +257,12 @@ fn should_refresh_fetch_route(error: &krabka_client_core::ClientError) -> bool {
 
 /// A [`RecordProducer`] backed by a real Kafka `Producer`.
 ///
-/// This producer collects pending ack receivers in `pending`, so `flush` can
+/// This producer collects pending delivery handles in `pending`, so `flush` can
 /// see per-record produce failures. This keeps the at-least-once guarantee.
 pub(crate) struct BrokerProducer {
     inner: Producer,
-    /// Receivers from pending `Producer::send` calls. `flush` drains them.
-    pending: Mutex<Vec<oneshot::Receiver<Result<RecordMetadata, ProducerError>>>>,
+    /// Handles from pending `Producer::enqueue` calls. `flush` drains them.
+    pending: Mutex<Vec<DeliveryHandle>>,
 }
 
 #[async_trait::async_trait]
@@ -276,14 +276,14 @@ impl RecordProducer for BrokerProducer {
     ) -> Result<(), StreamsClientError> {
         let rx = self
             .inner
-            .send(ProducerRecord {
+            .enqueue(ProducerRecord {
                 topic: topic.to_string(),
                 partition,
                 key,
                 value,
                 ..Default::default()
             })
-            .await;
+            .await?;
         self.pending.lock().await.push(rx);
         Ok(())
     }
@@ -298,7 +298,7 @@ impl RecordProducer for BrokerProducer {
     ) -> Result<(), StreamsClientError> {
         let rx = self
             .inner
-            .send(ProducerRecord {
+            .enqueue(ProducerRecord {
                 topic: topic.to_string(),
                 partition,
                 key,
@@ -306,17 +306,17 @@ impl RecordProducer for BrokerProducer {
                 timestamp_ms,
                 ..Default::default()
             })
-            .await;
+            .await?;
         self.pending.lock().await.push(rx);
         Ok(())
     }
 
-    /// Flushes the inner producer, then awaits every pending per-record ack.
+    /// Flushes the inner producer, then awaits every pending per-record delivery result.
     ///
     /// This method first asks the inner producer to drain its batch buffer. It
     /// then returns any `Err` result from a record ack, so the caller knows
     /// that a commit would be unsafe.
-    // cargo-mutants: live producer flush and per-record ack orchestration;
+    // cargo-mutants: live producer flush and per-record delivery result orchestration;
     // exercised by the streams integration suite.
     #[cfg_attr(test, mutants::skip)]
     async fn flush(&self) -> Result<(), StreamsClientError> {
@@ -324,15 +324,7 @@ impl RecordProducer for BrokerProducer {
 
         let receivers: Vec<_> = std::mem::take(&mut *self.pending.lock().await);
         for rx in receivers {
-            match rx.await {
-                Ok(Ok(_)) => {}
-                Ok(Err(e)) => return Err(e.into()),
-                Err(_) => {
-                    return Err(StreamsClientError::Runtime(
-                        "produce ack receiver dropped".to_string(),
-                    ));
-                }
-            }
+            rx.await?;
         }
         Ok(())
     }
@@ -346,7 +338,7 @@ impl RecordProducer for BrokerProducer {
 /// This type implements [`crate::runtime::eos::TransactionalProducer`], so the
 /// runtime can wrap each process-then-commit cycle in a transaction.
 ///
-/// Unlike [`BrokerProducer`], this wrapper does NOT collect per-record ack
+/// Unlike [`BrokerProducer`], this wrapper does NOT collect per-record delivery result
 /// receivers. The EOS commit path never calls `flush`. It goes
 /// `send` → `send_offsets_to_transaction` → `commit_transaction`, and the inner
 /// `Transaction::commit` already flushes the batch buffer through
@@ -380,22 +372,22 @@ impl RecordProducer for BrokerTransactionalProducer {
         key: Option<Bytes>,
         value: Option<Bytes>,
     ) -> Result<(), StreamsClientError> {
-        // Drop the returned ack receiver: under EOS the commit barrier is
+        // Drop the returned delivery handle: under EOS the commit barrier is
         // `commit_transaction` (which flushes + awaits all in-flight records),
-        // so per-record acks need not be tracked here. Dropping the receiver
+        // so per-record delivery results need not be tracked here. Dropping the handle
         // does not cancel the queued send. Explicit `drop` (not `let _ =`)
-        // because the receiver is itself a `Future`; we intentionally never
+        // because the handle is itself a `Future`; we intentionally never
         // await it.
         drop(
             self.inner
-                .send(ProducerRecord {
+                .enqueue(ProducerRecord {
                     topic: topic.to_string(),
                     partition,
                     key,
                     value,
                     ..Default::default()
                 })
-                .await,
+                .await?,
         );
         Ok(())
     }
@@ -410,7 +402,7 @@ impl RecordProducer for BrokerTransactionalProducer {
     ) -> Result<(), StreamsClientError> {
         drop(
             self.inner
-                .send(ProducerRecord {
+                .enqueue(ProducerRecord {
                     topic: topic.to_string(),
                     partition,
                     key,
@@ -418,7 +410,7 @@ impl RecordProducer for BrokerTransactionalProducer {
                     timestamp_ms,
                     ..Default::default()
                 })
-                .await,
+                .await?,
         );
         Ok(())
     }
@@ -522,6 +514,7 @@ impl TransactionalProducer for BrokerTransactionalProducer {
 pub(crate) struct BrokerOffsetStore {
     client: Client,
     group_id: String,
+    group_metadata: Mutex<Option<StreamsGroupMeta>>,
     /// Cache of topic name → `topic_id`. A metadata refresh fills it lazily.
     topic_ids: Mutex<HashMap<String, WireUuid>>,
 }
@@ -533,8 +526,14 @@ impl BrokerOffsetStore {
         Self {
             client,
             group_id: group_id.into(),
+            group_metadata: Mutex::new(None),
             topic_ids: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Refresh the member identity and epoch before committing assigned tasks.
+    pub(crate) async fn update_group_metadata(&self, metadata: StreamsGroupMeta) {
+        *self.group_metadata.lock().await = Some(metadata);
     }
 
     /// Looks up the `topic_id` for `topic`. On a cache miss, this method
@@ -768,12 +767,16 @@ impl OffsetStore for BrokerOffsetStore {
             })
             .collect();
 
+        let metadata = self.group_metadata.lock().await.clone();
         let resp = self
             .client
             .send(OffsetCommitRequest {
                 group_id: self.group_id.clone(),
-                generation_id_or_member_epoch: -1,
-                member_id: String::new(),
+                generation_id_or_member_epoch: metadata.as_ref().map_or(-1, |m| m.generation),
+                member_id: metadata
+                    .as_ref()
+                    .map_or_else(String::new, |m| m.member.clone()),
+                group_instance_id: metadata.and_then(|m| m.group_instance),
                 topics,
                 ..Default::default()
             })
@@ -1075,7 +1078,8 @@ mod tests {
     /// implementation.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn offset_store_commits_and_reads_back() {
-        let (_broker, bootstrap, _dir) = boot().await;
+        let (broker, bootstrap, _dir) = boot().await;
+        broker.wait_until_group_coordinator_ready().await;
 
         // Admin client: create the topic so topic_id is resolvable.
         let admin = Client::builder()

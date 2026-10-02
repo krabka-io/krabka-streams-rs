@@ -18,9 +18,7 @@ use std::sync::Arc;
 use krabka_client_core::{Client, ClientError};
 use krabka_protocol::owned::{
     common::{
-        streams_group_heartbeat_request::{
-            task_ids::TaskIds as ReqTaskIds, task_offset::TaskOffset,
-        },
+        streams_group_heartbeat_request::task_ids::TaskIds as ReqTaskIds,
         streams_group_heartbeat_response::task_ids::TaskIds as RespTaskIds,
     },
     streams_group_heartbeat_request::StreamsGroupHeartbeatRequest,
@@ -230,50 +228,19 @@ async fn reset_for_rejoin<T: HeartbeatTransport>(state: &CoordinatorState<T>) {
 async fn heartbeat_once<T: HeartbeatTransport>(state: &CoordinatorState<T>) -> Outcome {
     let epoch = *state.member_epoch.lock().await;
 
-    let (task_offsets, task_end_offsets) = {
-        let tracker = state.tracker.lock().await;
-        let to_wire =
-            |map: &std::collections::HashMap<(String, i32), i64>| -> Option<Vec<TaskOffset>> {
-                if map.is_empty() {
-                    None
-                } else {
-                    let mut list: Vec<TaskOffset> = map
-                        .iter()
-                        .map(|(key, &offset)| TaskOffset {
-                            subtopology_id: key.0.clone(),
-                            partition: key.1,
-                            offset,
-                            ..Default::default()
-                        })
-                        .collect();
-                    list.sort_by(|a, b| match a.subtopology_id.cmp(&b.subtopology_id) {
-                        std::cmp::Ordering::Equal => a.partition.cmp(&b.partition),
-                        other => other,
-                    });
-                    Some(list)
-                }
-            };
-        (
-            to_wire(&tracker.task_offsets),
-            to_wire(&tracker.task_end_offsets),
-        )
-    };
-
+    // Kafka 4.3.1 rejects non-null TaskOffsets and TaskEndOffsets. The runtime's
+    // changelog positions stay in the local tracker.
     let req = if epoch == 0 {
         // The first heartbeat after a join reports the owned tasks.
         *state.last_sent_tasks.lock().await = None;
-        StreamsGroupHeartbeatRequest {
-            task_offsets,
-            task_end_offsets,
-            ..join_heartbeat(
-                &state.group_id,
-                &state.member_id,
-                &state.process_id,
-                state.instance_id.clone(),
-                state.rebalance_timeout,
-                &state.topology,
-            )
-        }
+        join_heartbeat(
+            &state.group_id,
+            &state.member_id,
+            &state.process_id,
+            state.instance_id.clone(),
+            state.rebalance_timeout,
+            &state.topology,
+        )
     } else {
         let [active_tasks, standby_tasks, warmup_tasks] =
             TaskLists::into_fields(changed_task_lists(state).await);
@@ -287,8 +254,6 @@ async fn heartbeat_once<T: HeartbeatTransport>(state: &CoordinatorState<T>) -> O
             active_tasks,
             standby_tasks,
             warmup_tasks,
-            task_offsets,
-            task_end_offsets,
             ..Default::default()
         }
     };
@@ -413,16 +378,22 @@ async fn emit_response<T: HeartbeatTransport>(
 
 /// Build the assignment from a heartbeat response and decide whether it changed
 /// since `last`. Returns the event to emit, or `None` when nothing changed.
+/// An omitted role keeps its previous assignment; an explicit empty list clears it.
 fn assignment_event(
     r: &StreamsGroupHeartbeatResponse,
     topology: &BuiltTopology,
     last: &mut StreamsAssignment,
 ) -> Option<StreamsEvent> {
-    let assignment = StreamsAssignment {
-        active: resolve(r.active_tasks.as_ref(), topology),
-        standby: resolve(r.standby_tasks.as_ref(), topology),
-        warmup: resolve(r.warmup_tasks.as_ref(), topology),
-    };
+    let mut assignment = last.clone();
+    if let Some(tasks) = &r.active_tasks {
+        assignment.active = resolve(Some(tasks), topology);
+    }
+    if let Some(tasks) = &r.standby_tasks {
+        assignment.standby = resolve(Some(tasks), topology);
+    }
+    if let Some(tasks) = &r.warmup_tasks {
+        assignment.warmup = resolve(Some(tasks), topology);
+    }
     if assignment == *last {
         None
     } else {
@@ -601,6 +572,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn heartbeat_keeps_task_offsets_local() {
+        for epoch in [0, 7] {
+            let fake = FakeTransport::new(vec![ok_resp(9, vec![0])]);
+            let sent = fake.sent_arc();
+            let (state, _rx) = state_with(fake);
+            *state.member_epoch.lock().await = epoch;
+            {
+                let mut tracker = state.tracker.lock().await;
+                tracker.task_offsets.insert(("0".into(), 0), 5);
+                tracker.task_end_offsets.insert(("0".into(), 0), 10);
+            }
+
+            check!(matches!(heartbeat_once(&state).await, Outcome::Ok));
+            {
+                let sent = sent.lock().unwrap();
+                check!(sent[0].task_offsets.is_none());
+                check!(sent[0].task_end_offsets.is_none());
+                check!(kafka_refusal(&sent[0]).is_none());
+            }
+            let tracker = state.tracker.lock().await;
+            check!(tracker.task_offsets.get(&("0".into(), 0)) == Some(&5));
+            check!(tracker.task_end_offsets.get(&("0".into(), 0)) == Some(&10));
+        }
+    }
+
+    #[tokio::test]
     async fn heartbeat_fenced_member_epoch_requests_rejoin() {
         let fake = FakeTransport::new(vec![err_resp(110)]);
         let (st, _rx) = state_with(fake);
@@ -681,6 +678,12 @@ mod tests {
     /// (Apache Kafka 4.1 through 4.3) that the shape of a heartbeat decides,
     /// with Kafka's messages. `None` when Kafka accepts the request.
     fn kafka_refusal(req: &StreamsGroupHeartbeatRequest) -> Option<&'static str> {
+        if req.task_offsets.is_some() {
+            return Some("TaskOffsets are not supported yet.");
+        }
+        if req.task_end_offsets.is_some() {
+            return Some("TaskEndOffsets are not supported yet.");
+        }
         // `throwIfNotEmptyCollection` refuses a null list as well as a
         // non-empty one.
         let not_empty =
@@ -856,6 +859,28 @@ mod tests {
         ];
         for (name, req, refusal) in cases {
             check!(kafka_refusal(&req) == refusal, "{name}");
+        }
+    }
+
+    #[test]
+    fn kafka_refuses_non_null_task_offsets_even_when_empty() {
+        for (req, refusal) in [
+            (
+                StreamsGroupHeartbeatRequest {
+                    task_offsets: Some(vec![]),
+                    ..expected_join(None)
+                },
+                "TaskOffsets are not supported yet.",
+            ),
+            (
+                StreamsGroupHeartbeatRequest {
+                    task_end_offsets: Some(vec![]),
+                    ..expected_steady(3, None)
+                },
+                "TaskEndOffsets are not supported yet.",
+            ),
+        ] {
+            check!(kafka_refusal(&req) == Some(refusal));
         }
     }
 
@@ -1093,6 +1118,66 @@ mod tests {
         let r = resp_plain(vec![0, 1]);
         check!(assignment_event(&r, &topo, &mut last).is_some());
         check!(assignment_event(&r, &topo, &mut last).is_none());
+    }
+
+    #[test]
+    fn omitted_assignment_roles_leave_the_previous_assignment_unchanged() {
+        let topo = built_plain();
+        let active = resp_plain(vec![0]).active_tasks;
+        let standby = resp_plain(vec![1]).active_tasks;
+        let warmup = resp_plain(vec![2]).active_tasks;
+        let mut last = StreamsAssignment::default();
+        let initial = StreamsGroupHeartbeatResponse {
+            active_tasks: active,
+            standby_tasks: standby,
+            warmup_tasks: warmup,
+            ..Default::default()
+        };
+        check!(assignment_event(&initial, &topo, &mut last).is_some());
+        let previous = last.clone();
+
+        check!(
+            assignment_event(&StreamsGroupHeartbeatResponse::default(), &topo, &mut last).is_none()
+        );
+        check!(last == previous);
+    }
+
+    #[test]
+    fn explicit_empty_assignment_clears_only_the_role_the_response_names() {
+        let topo = built_plain();
+        let initial = StreamsGroupHeartbeatResponse {
+            active_tasks: resp_plain(vec![0]).active_tasks,
+            standby_tasks: resp_plain(vec![1]).active_tasks,
+            warmup_tasks: resp_plain(vec![2]).active_tasks,
+            ..Default::default()
+        };
+        let mut previous = StreamsAssignment::default();
+        check!(assignment_event(&initial, &topo, &mut previous).is_some());
+
+        for role in 0..3 {
+            let mut response = StreamsGroupHeartbeatResponse::default();
+            let mut expected = previous.clone();
+            match role {
+                0 => {
+                    response.active_tasks = Some(Vec::new());
+                    expected.active.clear();
+                }
+                1 => {
+                    response.standby_tasks = Some(Vec::new());
+                    expected.standby.clear();
+                }
+                _ => {
+                    response.warmup_tasks = Some(Vec::new());
+                    expected.warmup.clear();
+                }
+            }
+            let mut last = previous.clone();
+            check!(
+                assignment_event(&response, &topo, &mut last)
+                    == Some(StreamsEvent::Assigned(expected.clone()))
+            );
+            check!(last == expected);
+        }
     }
 
     #[test]
