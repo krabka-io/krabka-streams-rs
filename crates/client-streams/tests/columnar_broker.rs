@@ -179,14 +179,15 @@ impl RecordProducer for BrokerProduceAdapter {
         // barrier (mirrors tests/runtime_integration.rs), so drop the receiver.
         drop(
             self.producer
-                .send(ProducerRecord {
+                .enqueue(ProducerRecord {
                     topic: topic.into(),
                     partition: partition.or(Some(0)),
                     key,
                     value,
                     ..Default::default()
                 })
-                .await,
+                .await
+                .expect("record is queued"),
         );
         Ok(())
     }
@@ -235,14 +236,15 @@ async fn columnar_runtime_bridge_against_live_broker() {
         let value = PolarsIpcSerde.serialize("", &df);
         drop(
             producer
-                .send(ProducerRecord {
+                .enqueue(ProducerRecord {
                     topic: "in".into(),
                     partition: Some(0),
                     key: None,
                     value: Some(value),
                     ..Default::default()
                 })
-                .await,
+                .await
+                .expect("record is queued"),
         );
     }
     producer.flush().await.unwrap();

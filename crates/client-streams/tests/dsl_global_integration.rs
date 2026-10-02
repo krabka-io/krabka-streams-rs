@@ -203,14 +203,15 @@ async fn global_table_join_reads_all_partitions() {
     for (partition, key, val) in [(0i32, "a", "A"), (1i32, "b", "B")] {
         drop(
             producer
-                .send(ProducerRecord {
+                .enqueue(ProducerRecord {
                     topic: "global".into(),
                     partition: Some(partition),
                     key: Some(bytes::Bytes::copy_from_slice(key.as_bytes())),
                     value: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
                     ..Default::default()
                 })
-                .await,
+                .await
+                .expect("record is queued"),
         );
     }
     producer.flush().await.unwrap();
@@ -232,14 +233,15 @@ async fn global_table_join_reads_all_partitions() {
     for (key, val) in [("k1", "a"), ("k2", "b")] {
         drop(
             producer
-                .send(ProducerRecord {
+                .enqueue(ProducerRecord {
                     topic: "in".into(),
                     partition: Some(0),
                     key: Some(bytes::Bytes::copy_from_slice(key.as_bytes())),
                     value: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
                     ..Default::default()
                 })
-                .await,
+                .await
+                .expect("record is queued"),
         );
     }
     producer.flush().await.unwrap();

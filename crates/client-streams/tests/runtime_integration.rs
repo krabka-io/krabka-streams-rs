@@ -175,14 +175,15 @@ async fn kafka_streams_processes_records_end_to_end() {
     for (k, v) in [("k1", "hello"), ("k2", "world"), ("k3", "streams")] {
         drop(
             producer
-                .send(krabka_client_producer::ProducerRecord {
+                .enqueue(krabka_client_producer::ProducerRecord {
                     topic: "stream-in".into(),
                     partition: Some(0),
                     key: Some(bytes::Bytes::copy_from_slice(k.as_bytes())),
                     value: Some(bytes::Bytes::copy_from_slice(v.as_bytes())),
                     ..Default::default()
                 })
-                .await,
+                .await
+                .expect("record is queued"),
         );
     }
     producer.flush().await.unwrap();

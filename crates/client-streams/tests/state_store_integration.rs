@@ -201,14 +201,15 @@ async fn stateful_count_and_restart_restore() {
     for val in ["a", "a", "b"] {
         drop(
             producer
-                .send(krabka_client_producer::ProducerRecord {
+                .enqueue(krabka_client_producer::ProducerRecord {
                     topic: "stream-in".into(),
                     partition: Some(0),
                     key: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
                     value: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
                     ..Default::default()
                 })
-                .await,
+                .await
+                .expect("record is queued"),
         );
     }
     producer.flush().await.unwrap();
@@ -252,14 +253,15 @@ async fn stateful_count_and_restart_restore() {
     // Produce one more "a" to stream-in BEFORE starting so it's queued.
     drop(
         producer
-            .send(krabka_client_producer::ProducerRecord {
+            .enqueue(krabka_client_producer::ProducerRecord {
                 topic: "stream-in".into(),
                 partition: Some(0),
                 key: Some(bytes::Bytes::copy_from_slice(b"a")),
                 value: Some(bytes::Bytes::copy_from_slice(b"a")),
                 ..Default::default()
             })
-            .await,
+            .await
+            .expect("record is queued"),
     );
     producer.flush().await.unwrap();
 

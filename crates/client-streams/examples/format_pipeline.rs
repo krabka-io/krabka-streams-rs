@@ -159,8 +159,6 @@ async fn send_record(producer: &Producer, topic: &str, value: Bytes) {
             ..Default::default()
         })
         .await
-        .await
-        .expect("send recv")
         .expect("send ack");
 }
 

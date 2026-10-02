@@ -191,14 +191,15 @@ async fn open_counts_store(
 async fn produce_one(producer: &krabka_client_producer::Producer, val: &str) {
     drop(
         producer
-            .send(krabka_client_producer::ProducerRecord {
+            .enqueue(krabka_client_producer::ProducerRecord {
                 topic: "dsl-in".into(),
                 partition: Some(0),
                 key: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
                 value: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
                 ..Default::default()
             })
-            .await,
+            .await
+            .expect("record is queued"),
     );
     producer.flush().await.unwrap();
 }
@@ -239,14 +240,15 @@ async fn dsl_count_restart_restore_emit_on_update() {
     for val in ["a", "a", "b"] {
         drop(
             producer
-                .send(krabka_client_producer::ProducerRecord {
+                .enqueue(krabka_client_producer::ProducerRecord {
                     topic: "dsl-in".into(),
                     partition: Some(0),
                     key: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
                     value: Some(bytes::Bytes::copy_from_slice(val.as_bytes())),
                     ..Default::default()
                 })
-                .await,
+                .await
+                .expect("record is queued"),
         );
     }
     producer.flush().await.unwrap();
