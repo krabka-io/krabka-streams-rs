@@ -951,7 +951,7 @@
 //! [`KafkaStreams`], [`StreamsApp`], the Turso store backend, the file-backed
 //! snapshot store and the schema-registry serde bridge exist only on native
 //! targets.
-#![doc(html_root_url = "https://docs.rs/krabka-client-streams/0.4.0")]
+#![doc(html_root_url = "https://docs.rs/krabka-client-streams/0.4.1")]
 
 pub mod barrier;
 pub mod columnar;
