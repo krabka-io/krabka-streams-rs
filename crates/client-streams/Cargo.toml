@@ -100,7 +100,7 @@ krabka-client-admin = { version = "0.5.0" }
 # crate is not published, so it has no crates.io version. It comes from the
 # same revision as the `krabka-schema-serde` patch in the workspace manifest.
 # `cargo publish` drops a dev dependency that has no version.
-krabka-schema-registry = { git = "https://github.com/krabka-io/krabka-schema-registry", rev = "a7b5964f7536b07a36a1f440d4af65c0bf6609dd" }
+krabka-schema-registry = { git = "https://github.com/krabka-io/krabka-schema-registry", rev = "ed08e49ef71fdf77303229b8f41e39389e37641a" }
 hex = { workspace = true }
 mutants = { workspace = true }
 prost = { workspace = true }
