@@ -26,7 +26,7 @@ workspace = true
 # and tokio refuses `rt-multi-thread` on wasm. The dependencies below are the
 # ones both targets share; the two `[target.*]` tables hold the split.
 [dependencies]
-krabka-protocol = { version = "0.4.0", default-features = false }
+krabka-protocol = { version = "0.5.0", default-features = false }
 krabka-units = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
@@ -48,10 +48,10 @@ serde_json = { workspace = true, optional = true }
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 # Schema-registry serdes (Avro/Protobuf/JSON) are a first-class, always-on part
 # of the streams client — no feature gate.
-krabka-schema-serde = { version = "0.4.0", features = ["avro", "protobuf", "json"] }
-krabka-client-core = { version = "0.4.0" }
-krabka-client-consumer = { version = "0.4.0" }
-krabka-client-producer = { version = "0.4.0" }
+krabka-schema-serde = { version = "0.4.1", features = ["avro", "protobuf", "json"] }
+krabka-client-core = { version = "0.5.0" }
+krabka-client-consumer = { version = "0.5.0" }
+krabka-client-producer = { version = "0.5.0" }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
 tokio-util = { workspace = true, features = ["rt"] }
 # The member and process ids of a streams group member are v4 UUIDs.
@@ -91,11 +91,11 @@ required-features = ["polars", "arrow"]
 [dev-dependencies]
 assert2 = { workspace = true }
 apache-avro = { workspace = true, features = ["derive"] }
-krabka-broker = { version = "0.6.1", features = ["test-helpers"] }
+krabka-broker = { version = "0.7.0", features = ["test-helpers"] }
 # Dev-only path dependency. Keep the crates.io requirement on the released
 # minor line so `cargo publish` can package this crate even when release-plz
 # publishes dev-dependency-only workspace crates later in the same run.
-krabka-client-admin = { version = "0.4.0" }
+krabka-client-admin = { version = "0.5.0" }
 # The in-process Schema Registry that the `format_pipeline` example boots. The
 # crate is not published, so it has no crates.io version. It comes from the
 # same revision as the `krabka-schema-serde` patch in the workspace manifest.

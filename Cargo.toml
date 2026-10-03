@@ -5,7 +5,7 @@ members = ["crates/*"]
 exclude = ["tools/mutants"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["The Krabka Authors"]
@@ -64,7 +64,7 @@ tracing = "0.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # First-party crates inherited by more than one member.
-krabka-units = "0.4.0"
+krabka-units = "0.5.0"
 
 # Sibling repositories, pinned by revision. These crates are declared
 # against crates.io above and in the member manifests; the patch below is
