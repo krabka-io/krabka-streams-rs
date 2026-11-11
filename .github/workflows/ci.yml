@@ -1,6 +1,7 @@
 name: ci
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
   schedule:
@@ -176,3 +177,14 @@ jobs:
           disk-cache: ${{ github.workflow }}-mutants
           repository-cache: true
       - run: bazel test ${{ matrix.crate.target }}
+
+  gate:
+    name: gate
+    if: always()
+    needs: [ci, coverage, docs, mutants-select, mutants]
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: krabka-io/tooling/actions/gate@1fb9d942c2def2fcfa20c19ed8ae8a7d8f220f65
+        with:
+          results: ${{ toJSON(needs) }}
+          allow-skipped: ci,coverage,docs,mutants-select,mutants
